@@ -169,12 +169,46 @@ describe('training model', () => {
   });
 
   it('reads and writes saved discs in localStorage', () => {
-    const disc = createDisc('  Pure  ', 'putter');
+    const disc = createDisc('  Pure  ', 'putter', {
+      brand: 'Latitude 64',
+      speed: 3,
+      glide: 3,
+      turn: -1,
+      fade: 1,
+      stability: 'Stable',
+      source: 'discit',
+      sourceId: 'pure-id',
+      sourceSlug: 'pure',
+      brandSlug: 'latitude-64',
+      imageUrl: 'https://example.com/pure.webp',
+      infoUrl: 'https://example.com/pure',
+      importedAt: '2026-06-28T12:00:00.000Z',
+      attribution: 'Disc data supplied by DiscIt API.',
+    });
 
     saveDiscs([disc]);
 
     expect(JSON.parse(localStorage.getItem(DISCS_KEY) ?? '[]')).toHaveLength(1);
-    expect(readStoredDiscs()).toMatchObject([{ name: 'Pure', category: 'putter' }]);
+    expect(readStoredDiscs()).toMatchObject([
+      {
+        name: 'Pure',
+        category: 'putter',
+        brand: 'Latitude 64',
+        speed: 3,
+        glide: 3,
+        turn: -1,
+        fade: 1,
+        stability: 'Stable',
+        source: 'discit',
+        sourceId: 'pure-id',
+        sourceSlug: 'pure',
+        brandSlug: 'latitude-64',
+        imageUrl: 'https://example.com/pure.webp',
+        infoUrl: 'https://example.com/pure',
+        importedAt: '2026-06-28T12:00:00.000Z',
+        attribution: 'Disc data supplied by DiscIt API.',
+      },
+    ]);
 
     localStorage.setItem(DISCS_KEY, JSON.stringify([{ name: '', category: 'mid-range' }, { name: 'Bad' }]));
     expect(readStoredDiscs()).toEqual([]);

@@ -104,6 +104,20 @@ export type Disc = {
   name: string;
   category: DiscCategory;
   createdAt: string;
+  brand?: string;
+  speed?: number;
+  glide?: number;
+  turn?: number;
+  fade?: number;
+  stability?: string;
+  source?: 'discit';
+  sourceId?: string;
+  sourceSlug?: string;
+  brandSlug?: string;
+  imageUrl?: string;
+  infoUrl?: string;
+  importedAt?: string;
+  attribution?: string;
 };
 
 export type CourseHole = {
@@ -787,6 +801,15 @@ export function readDraft(): TrainingSession | null {
   }
 }
 
+function normalizedText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizedOptionalNumber(value: unknown) {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
 function normalizeDisc(input: Partial<Disc> | undefined): Disc | null {
   const name = input?.name?.trim();
   const category = input?.category;
@@ -800,11 +823,31 @@ function normalizeDisc(input: Partial<Disc> | undefined): Disc | null {
     name,
     category,
     createdAt: input.createdAt || new Date().toISOString(),
+    ...(normalizedText(input.brand) ? { brand: normalizedText(input.brand) } : {}),
+    ...(normalizedOptionalNumber(input.speed) !== undefined ? { speed: normalizedOptionalNumber(input.speed) } : {}),
+    ...(normalizedOptionalNumber(input.glide) !== undefined ? { glide: normalizedOptionalNumber(input.glide) } : {}),
+    ...(normalizedOptionalNumber(input.turn) !== undefined ? { turn: normalizedOptionalNumber(input.turn) } : {}),
+    ...(normalizedOptionalNumber(input.fade) !== undefined ? { fade: normalizedOptionalNumber(input.fade) } : {}),
+    ...(normalizedText(input.stability) ? { stability: normalizedText(input.stability) } : {}),
+    ...(input.source === 'discit' ? { source: input.source } : {}),
+    ...(normalizedText(input.sourceId) ? { sourceId: normalizedText(input.sourceId) } : {}),
+    ...(normalizedText(input.sourceSlug) ? { sourceSlug: normalizedText(input.sourceSlug) } : {}),
+    ...(normalizedText(input.brandSlug) ? { brandSlug: normalizedText(input.brandSlug) } : {}),
+    ...(normalizedText(input.imageUrl) ? { imageUrl: normalizedText(input.imageUrl) } : {}),
+    ...(normalizedText(input.infoUrl) ? { infoUrl: normalizedText(input.infoUrl) } : {}),
+    ...(normalizedText(input.importedAt) ? { importedAt: normalizedText(input.importedAt) } : {}),
+    ...(normalizedText(input.attribution) ? { attribution: normalizedText(input.attribution) } : {}),
   };
 }
 
-export function createDisc(name: string, category: DiscCategory): Disc {
-  const normalized = normalizeDisc({ id: makeId(), name, category, createdAt: new Date().toISOString() });
+export function createDisc(name: string, category: DiscCategory, metadata: Partial<Disc> = {}): Disc {
+  const normalized = normalizeDisc({
+    ...metadata,
+    id: makeId(),
+    name,
+    category,
+    createdAt: new Date().toISOString(),
+  });
 
   if (!normalized) {
     throw new Error('Disc name and category are required');
@@ -825,15 +868,6 @@ export function readStoredDiscs(): Disc[] {
   } catch {
     return [];
   }
-}
-
-function normalizedText(value: unknown) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizedOptionalNumber(value: unknown) {
-  const numberValue = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(numberValue) ? numberValue : undefined;
 }
 
 export function clampHoleCount(value: number) {

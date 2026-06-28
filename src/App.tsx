@@ -14,6 +14,7 @@ import {
   PlusCircle,
   RotateCcw,
   Save,
+  Search,
   Target,
   Trash2,
   Trophy,
@@ -29,6 +30,14 @@ import {
   type Coordinates,
   type ImportedCourse,
 } from './courseImport';
+import {
+  DISCIT_ATTRIBUTION,
+  createDiscMetadataFromImport,
+  fetchDiscItDiscs,
+  importedDiscDisplayName,
+  isDiscAlreadyImported,
+  type ImportedDisc,
+} from './discImport';
 import {
   approachDirections,
   applyThrowDefaults,
@@ -185,6 +194,15 @@ function getCurrentCoordinates() {
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
     );
   });
+}
+
+function discSelectLabel(disc: Disc) {
+  const flight =
+    disc.speed !== undefined && disc.glide !== undefined && disc.turn !== undefined && disc.fade !== undefined
+      ? ` ${disc.speed}/${disc.glide}/${disc.turn}/${disc.fade}`
+      : '';
+
+  return `${disc.name} - ${disc.category}${flight}`;
 }
 
 function App() {
@@ -366,8 +384,8 @@ function App() {
     saveSessions(nextSessions);
   }
 
-  function addDisc(name: string, category: DiscCategory) {
-    const nextDiscs = [...discs, createDisc(name, category)];
+  function addDisc(name: string, category: DiscCategory, metadata: Partial<Disc> = {}) {
+    const nextDiscs = [...discs, createDisc(name, category, metadata)];
     setDiscs(nextDiscs);
     saveDiscs(nextDiscs);
   }
@@ -923,7 +941,7 @@ function TrackView({
                 <option value="">No disc</option>
                 {discs.map((disc) => (
                   <option key={disc.id} value={disc.id}>
-                    {disc.name} - {disc.category}
+                    {discSelectLabel(disc)}
                   </option>
                 ))}
               </select>
@@ -1786,7 +1804,7 @@ function CourseRunView({
                 <option value="">No disc</option>
                 {discs.map((disc) => (
                   <option key={disc.id} value={disc.id}>
-                    {disc.name} - {disc.category}
+                    {discSelectLabel(disc)}
                   </option>
                 ))}
               </select>
@@ -1893,13 +1911,18 @@ function CourseRunView({
 
 type DiscsViewProps = {
   discs: Disc[];
-  onAdd: (name: string, category: DiscCategory) => void;
+  onAdd: (name: string, category: DiscCategory, metadata?: Partial<Disc>) => void;
   onDelete: (discId: string) => void;
 };
 
 function DiscsView({ discs, onAdd, onDelete }: DiscsViewProps) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<DiscCategory>('putter');
+  const [discSearch, setDiscSearch] = useState('');
+  const [importedDiscs, setImportedDiscs] = useState<ImportedDisc[]>([]);
+  const [discImportStatus, setDiscImportStatus] = useState('');
+  const [discImportError, setDiscImportError] = useState('');
+  const [loadingDiscs, setLoadingDiscs] = useState(false);
 
   function submitDisc(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1913,9 +1936,120 @@ function DiscsView({ discs, onAdd, onDelete }: DiscsViewProps) {
     setCategory('putter');
   }
 
+  async function searchDiscDatabase(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    setLoadingDiscs(true);
+    setDiscImportError('');
+    setDiscImportStatus('Loading DiscIt discs...');
+
+    try {
+      const discsFromApi = await fetchDiscItDiscs(discSearch);
+      setImportedDiscs(discsFromApi.slice(0, 30));
+      setDiscImportStatus(
+        discsFromApi.length > 0
+          ? `Showing ${Math.min(30, discsFromApi.length)} disc database result${discsFromApi.length === 1 ? '' : 's'}.`
+          : 'No discs found.'
+      );
+    } catch {
+      setImportedDiscs([]);
+      setDiscImportStatus('');
+      setDiscImportError('Could not load DiscIt discs. Check connection and try again.');
+    } finally {
+      setLoadingDiscs(false);
+    }
+  }
+
+  function importDisc(disc: ImportedDisc) {
+    onAdd(importedDiscDisplayName(disc), disc.category, createDiscMetadataFromImport(disc));
+    setDiscImportStatus(`${importedDiscDisplayName(disc)} added to your discs.`);
+  }
+
   return (
     <section className="discs-panel" aria-label="Discs">
+      <section className="disc-finder" aria-label="Find discs">
+        <div className="section-heading compact-heading">
+          <div>
+            <h2>Find discs</h2>
+            <p>{DISCIT_ATTRIBUTION}</p>
+          </div>
+        </div>
+
+        <form className="disc-search-form" onSubmit={searchDiscDatabase}>
+          <label>
+            Search database
+            <input
+              value={discSearch}
+              onChange={(event) => setDiscSearch(event.target.value)}
+              data-testid="disc-search"
+              placeholder="Aviar, Zone, Destroyer..."
+            />
+          </label>
+          <button className="primary-action" type="submit" disabled={loadingDiscs} data-testid="search-disc-api">
+            <Search size={18} />
+            {loadingDiscs ? 'Loading...' : 'Search'}
+          </button>
+        </form>
+
+        <button className="secondary-action" type="button" onClick={() => searchDiscDatabase()} disabled={loadingDiscs}>
+          <Disc3 size={18} />
+          Browse all discs
+        </button>
+
+        {discImportStatus && (
+          <p className="import-status" role="status">
+            {discImportStatus}
+          </p>
+        )}
+        {discImportError && (
+          <p className="import-error" role="alert">
+            {discImportError}
+          </p>
+        )}
+
+        {importedDiscs.length > 0 && (
+          <section className="import-disc-list" aria-label="DiscIt discs">
+            {importedDiscs.map((disc) => {
+              const alreadySaved = isDiscAlreadyImported(discs, disc);
+
+              return (
+                <article className="import-disc-card" key={disc.sourceId} data-testid="import-disc-card">
+                  {disc.imageUrl && <img src={disc.imageUrl} alt="" loading="lazy" />}
+                  <div>
+                    <h3>{importedDiscDisplayName(disc)}</h3>
+                    <p>
+                      {disc.category}
+                      {disc.stability ? ` - ${disc.stability}` : ''}
+                    </p>
+                    {disc.speed !== undefined &&
+                      disc.glide !== undefined &&
+                      disc.turn !== undefined &&
+                      disc.fade !== undefined && (
+                        <span>
+                          {disc.speed} / {disc.glide} / {disc.turn} / {disc.fade}
+                        </span>
+                      )}
+                  </div>
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => importDisc(disc)}
+                    disabled={alreadySaved}
+                    data-testid={`import-disc-${disc.sourceId}`}
+                  >
+                    <PlusCircle size={18} />
+                    {alreadySaved ? 'Saved' : 'Add'}
+                  </button>
+                </article>
+              );
+            })}
+          </section>
+        )}
+      </section>
+
       <form className="disc-form" onSubmit={submitDisc}>
+        <div className="section-heading compact-heading">
+          <h2>Manual disc</h2>
+        </div>
         <label>
           Disc name
           <input
@@ -1956,7 +2090,19 @@ function DiscsView({ discs, onAdd, onDelete }: DiscsViewProps) {
             <article className="disc-card" key={disc.id} data-testid="disc-card">
               <div>
                 <h2>{disc.name}</h2>
-                <p>{disc.category}</p>
+                <p>
+                  {disc.category}
+                  {disc.brand ? ` - ${disc.brand}` : ''}
+                  {disc.stability ? ` - ${disc.stability}` : ''}
+                </p>
+                {disc.speed !== undefined &&
+                  disc.glide !== undefined &&
+                  disc.turn !== undefined &&
+                  disc.fade !== undefined && (
+                    <span>
+                      {disc.speed} / {disc.glide} / {disc.turn} / {disc.fade}
+                    </span>
+                  )}
               </div>
               <button
                 className="delete-action"

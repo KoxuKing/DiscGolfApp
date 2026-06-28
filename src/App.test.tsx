@@ -169,6 +169,82 @@ describe('App', () => {
     expect(screen.getByTestId('current-disc')).toHaveValue('');
   });
 
+  it('searches the disc database and imports a disc for throw selection', async () => {
+    const user = userEvent.setup();
+    const originalFetch = globalThis.fetch;
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify([
+            {
+              id: 'zone-id',
+              name: 'Zone',
+              brand: 'Discraft',
+              category: 'Putt & Approach',
+              speed: '4',
+              glide: '3',
+              turn: '0',
+              fade: '3',
+              stability: 'Overstable',
+              link: 'https://example.com/zone',
+              pic: 'https://example.com/zone.webp',
+              name_slug: 'zone',
+              brand_slug: 'discraft',
+            },
+          ]),
+          { status: 200 }
+        )
+      )
+    );
+
+    Object.defineProperty(globalThis, 'fetch', { configurable: true, value: fetcher });
+
+    try {
+      render(<App />);
+
+      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Discs' }));
+      await user.type(screen.getByTestId('disc-search'), 'zone');
+      await user.click(screen.getByTestId('search-disc-api'));
+
+      const importCard = await screen.findByTestId('import-disc-card');
+      expect(importCard).toHaveTextContent('Discraft Zone');
+      expect(importCard).toHaveTextContent('putter - Overstable');
+      expect(importCard).toHaveTextContent('4 / 3 / 0 / 3');
+
+      await user.click(screen.getByTestId('import-disc-zone-id'));
+
+      const savedDiscs = JSON.parse(localStorage.getItem(DISCS_KEY) ?? '[]');
+      expect(savedDiscs).toHaveLength(1);
+      expect(savedDiscs[0]).toMatchObject({
+        name: 'Discraft Zone',
+        category: 'putter',
+        source: 'discit',
+        sourceId: 'zone-id',
+        brand: 'Discraft',
+        speed: 4,
+        glide: 3,
+        turn: 0,
+        fade: 3,
+        stability: 'Overstable',
+      });
+      expect(savedDiscs[0].attribution).toContain('DiscIt');
+      expect(screen.getByTestId('import-disc-zone-id')).toBeDisabled();
+      expect(screen.getByTestId('disc-card')).toHaveTextContent('Discraft Zone');
+
+      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'New' }));
+      fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '1' } });
+      await user.click(screen.getByTestId('start-session'));
+
+      expect(
+        within(screen.getByTestId('current-disc')).getByRole('option', {
+          name: 'Discraft Zone - putter 4/3/0/3',
+        })
+      ).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(globalThis, 'fetch', { configurable: true, value: originalFetch });
+    }
+  });
+
   it('loads saved custom sessions from localStorage and deletes them from history', async () => {
     const user = userEvent.setup();
     const session = createBlankSession('forehand', { distanceMeters: '55', plannedThrows: 4 });
