@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Web build output
+dist/
+stable-dist/
+
+# Mobile build output and local toolchains
+mobile-release/
+mobile-build-tools/
+
+# Capacitor / Android generated output
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/local.properties
+
+# TypeScript incremental output
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

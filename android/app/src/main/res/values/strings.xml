@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Disc Golf Training</string>
+    <string name="title_activity_main">Disc Golf Training</string>
+    <string name="package_name">com.local.discgolftraining</string>
+    <string name="custom_url_scheme">com.local.discgolftraining</string>
+</resources>
