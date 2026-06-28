@@ -1417,6 +1417,7 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
                     </p>
                     <span>
                       {course.holeCount ? `${course.holeCount} holes` : '18-hole editable draft'}{' '}
+                      {course.parTotal ? `- Par ${course.parTotal} ` : ''}
                       {course.lengthMeters ? `- ${course.lengthMeters} m layout` : ''}
                     </span>
                   </div>

@@ -1,5 +1,6 @@
 import {
   clampCourseDistance,
+  clampCoursePar,
   clampHoleCount,
   createCourseHoles,
   type Course,
@@ -134,15 +135,51 @@ export function sortImportedCourses(courses: ImportedCourse[], location: Coordin
   });
 }
 
+export function deriveHolePars(holeCountInput: number, parTotal: number | null) {
+  const holeCount = clampHoleCount(holeCountInput);
+  const fallbackPars = Array.from({ length: holeCount }, () => 3);
+
+  if (!parTotal) {
+    return fallbackPars;
+  }
+
+  const totalPar = Math.min(holeCount * 10, Math.max(holeCount, Math.round(parTotal)));
+  const basePar = clampCoursePar(Math.floor(totalPar / holeCount));
+  const pars = Array.from({ length: holeCount }, () => basePar);
+  const remainingPar = totalPar - pars.reduce((sum, par) => sum + par, 0);
+
+  for (let index = 0; index < remainingPar; index += 1) {
+    const holeIndex = Math.floor(((index + 1) * holeCount) / (remainingPar + 1));
+    pars[holeIndex] = clampCoursePar(pars[holeIndex] + 1);
+  }
+
+  return pars;
+}
+
+export function deriveHoleDistances(holeCountInput: number, lengthMeters: number | null) {
+  const holeCount = clampHoleCount(holeCountInput);
+
+  if (!lengthMeters) {
+    return Array.from({ length: holeCount }, () => 80);
+  }
+
+  const totalLength = Math.max(holeCount, Math.round(lengthMeters));
+  const baseDistance = Math.floor(totalLength / holeCount);
+  const remainingMeters = totalLength - baseDistance * holeCount;
+
+  return Array.from({ length: holeCount }, (_value, index) =>
+    clampCourseDistance(baseDistance + (index < remainingMeters ? 1 : 0))
+  );
+}
+
 export function createCourseDraftFromImport(course: ImportedCourse, importedAt = new Date().toISOString()): ImportedCourseDraft {
   const holeCount = clampHoleCount(course.holeCount ?? 18);
-  const defaultDistance = clampCourseDistance(
-    course.lengthMeters && holeCount > 0 ? Math.round(course.lengthMeters / holeCount) : 80
-  );
+  const pars = deriveHolePars(holeCount, course.parTotal);
+  const distances = deriveHoleDistances(holeCount, course.lengthMeters);
   const holes = createCourseHoles(holeCount).map((hole) => ({
     ...hole,
-    par: 3,
-    distanceMeters: defaultDistance,
+    par: pars[hole.number - 1] ?? 3,
+    distanceMeters: distances[hole.number - 1] ?? 80,
   }));
 
   return {

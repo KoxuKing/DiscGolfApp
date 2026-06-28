@@ -353,7 +353,7 @@ describe('App', () => {
                 lat: 61.49,
                 lon: 23.77,
                 locality: 'Tampere',
-                primary_layout: { holes: 3, length_meters: 300 },
+                primary_layout: { holes: 3, par_total: 10, length_meters: 302 },
               },
               {
                 id: 'second',
@@ -399,6 +399,7 @@ describe('App', () => {
       expect(importCards[0]).toHaveTextContent('Near Course');
       expect(importCards[0]).toHaveTextContent('Tampere');
       expect(importCards[0]).toHaveTextContent('3 holes');
+      expect(importCards[0]).toHaveTextContent('Par 10');
       expect(importCards[1]).toHaveTextContent('Second Course');
       expect(importCards[2]).toHaveTextContent('Third Course');
       expect(screen.queryByText('Far Course')).not.toBeInTheDocument();
@@ -407,7 +408,8 @@ describe('App', () => {
 
       expect(screen.getByTestId('course-name')).toHaveValue('Near Course');
       expect(screen.getByTestId('course-hole-count')).toHaveValue(3);
-      expect(screen.getByTestId('course-hole-1-distance')).toHaveValue(100);
+      expect(screen.getByTestId('course-hole-1-distance')).toHaveValue(101);
+      expect(screen.getByTestId('course-hole-2-par')).toHaveValue(4);
       expect(screen.getByTestId('import-attribution')).toHaveTextContent('DiscGolfAPI');
 
       await user.click(screen.getByTestId('add-course'));
@@ -423,6 +425,12 @@ describe('App', () => {
         lat: 61.49,
         lon: 23.77,
       });
+      expect(savedCourses[0].holes.map((hole: { par: number }) => hole.par)).toEqual([3, 4, 3]);
+      expect(savedCourses[0].holes.map((hole: { distanceMeters: number }) => hole.distanceMeters)).toEqual([
+        101,
+        101,
+        100,
+      ]);
       expect(savedCourses[0].attribution).toContain('DiscGolfAPI');
       expect(screen.getByTestId('import-course-near')).toBeDisabled();
       expect(screen.getByTestId('import-course-near')).toHaveTextContent('Saved');

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DISCGOLFAPI_FINLAND_COURSES_URL,
   createCourseDraftFromImport,
+  deriveHoleDistances,
+  deriveHolePars,
   fetchFinlandDiscGolfCourses,
   isCourseAlreadyImported,
   normalizeDiscGolfApiCoursesResponse,
@@ -70,7 +72,7 @@ describe('course import', () => {
           slug: 'layout-course',
           name: 'Layout Course',
           locality: 'Nokia',
-          primary_layout: { holes: 3, length_meters: 300 },
+          primary_layout: { holes: 3, par_total: 10, length_meters: 302 },
         },
         { id: 'fallback', name: 'Fallback Course' },
       ],
@@ -81,7 +83,8 @@ describe('course import', () => {
 
     expect(draft.name).toBe('Layout Course');
     expect(draft.holes).toHaveLength(3);
-    expect(draft.holes[0]).toMatchObject({ par: 3, distanceMeters: 100 });
+    expect(draft.holes.map((hole) => hole.par)).toEqual([3, 4, 3]);
+    expect(draft.holes.map((hole) => hole.distanceMeters)).toEqual([101, 101, 100]);
     expect(draft.metadata).toMatchObject({
       source: 'discgolfapi',
       sourceId: 'layout',
@@ -92,6 +95,14 @@ describe('course import', () => {
     expect(draft.metadata.attribution).toContain('DiscGolfAPI');
     expect(fallbackDraft.holes).toHaveLength(18);
     expect(fallbackDraft.holes[0]).toMatchObject({ par: 3, distanceMeters: 80 });
+  });
+
+  it('derives hole pars and distances from DiscGolfAPI layout totals', () => {
+    expect(deriveHolePars(18, 56)).toHaveLength(18);
+    expect(deriveHolePars(18, 56).reduce((sum, par) => sum + par, 0)).toBe(56);
+    expect(deriveHolePars(9, 27)).toEqual([3, 3, 3, 3, 3, 3, 3, 3, 3]);
+    expect(deriveHoleDistances(3, 302)).toEqual([101, 101, 100]);
+    expect(deriveHoleDistances(2, null)).toEqual([80, 80]);
   });
 
   it('detects already imported courses by source id', () => {
