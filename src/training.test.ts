@@ -190,7 +190,17 @@ describe('training model', () => {
         ...hole,
         par: index === 0 ? 3 : 4,
         distanceMeters: index === 0 ? 85 : 126,
-      }))
+      })),
+      {
+        source: 'discgolfapi',
+        sourceId: 'crs_local_park',
+        sourceSlug: 'local-park',
+        lat: 61.5,
+        lon: 23.7,
+        locality: 'Tampere',
+        importedAt: '2026-06-28T12:00:00.000Z',
+        attribution: 'Course data supplied by DiscGolfAPI.',
+      }
     );
 
     saveCourses([course]);
@@ -198,6 +208,14 @@ describe('training model', () => {
     expect(JSON.parse(localStorage.getItem(COURSES_KEY) ?? '[]')).toHaveLength(1);
     expect(readStoredCourses()[0]).toMatchObject({
       name: 'Local Park',
+      source: 'discgolfapi',
+      sourceId: 'crs_local_park',
+      sourceSlug: 'local-park',
+      lat: 61.5,
+      lon: 23.7,
+      locality: 'Tampere',
+      importedAt: '2026-06-28T12:00:00.000Z',
+      attribution: 'Course data supplied by DiscGolfAPI.',
       holes: [
         { number: 1, par: 3, distanceMeters: 85 },
         { number: 2, par: 4, distanceMeters: 126 },

@@ -293,6 +293,8 @@ h1 {
 .discs-panel,
 .disc-list,
 .courses-panel,
+.course-finder,
+.import-course-list,
 .course-list,
 .course-run-history,
 .course-run-panel {
@@ -713,6 +715,7 @@ textarea {
 
 .disc-form label,
 .course-form label,
+.course-finder label,
 .course-start-panel label {
   display: grid;
   gap: 6px;
@@ -721,7 +724,9 @@ textarea {
   font-weight: 800;
 }
 
+.course-finder,
 .course-form,
+.import-course-card,
 .course-card,
 .course-run-card {
   display: grid;
@@ -730,6 +735,53 @@ textarea {
   border: 1px solid #d9d6ca;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.course-finder {
+  border-left: 5px solid #1d7a4f;
+}
+
+.course-finder .section-heading p {
+  margin-bottom: 0;
+  color: #5b685f;
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.import-course-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  background: #fbfaf5;
+}
+
+.import-course-card h3 {
+  margin: 0 0 3px;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.import-course-card p,
+.import-course-card span,
+.import-attribution,
+.import-status,
+.import-error {
+  margin: 0;
+  color: #5b685f;
+  font-size: 0.86rem;
+  font-weight: 780;
+}
+
+.import-course-card span {
+  display: block;
+}
+
+.import-status,
+.import-attribution {
+  color: #1d7a4f;
+}
+
+.import-error {
+  color: #9f2218;
 }
 
 .course-card,

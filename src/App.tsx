@@ -21,6 +21,15 @@ import {
   Users,
 } from 'lucide-react';
 import {
+  DISCGOLFAPI_ATTRIBUTION,
+  createCourseDraftFromImport,
+  fetchFinlandDiscGolfCourses,
+  isCourseAlreadyImported,
+  sortImportedCourses,
+  type Coordinates,
+  type ImportedCourse,
+} from './courseImport';
+import {
   approachDirections,
   applyThrowDefaults,
   aiHistoryExportFilename,
@@ -161,6 +170,21 @@ async function copyText(text: string) {
   }
 
   copyTextFallback(text);
+}
+
+function getCurrentCoordinates() {
+  return new Promise<Coordinates>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation unavailable'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ lat: position.coords.latitude, lon: position.coords.longitude }),
+      (error) => reject(error),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 }
+    );
+  });
 }
 
 function App() {
@@ -354,8 +378,8 @@ function App() {
     saveDiscs(nextDiscs);
   }
 
-  function addCourse(name: string, holes: CourseHole[]) {
-    const nextCourses = [...courses, createCourse(name, holes)];
+  function addCourse(name: string, holes: CourseHole[], metadata: Partial<Course> = {}) {
+    const nextCourses = [...courses, createCourse(name, holes, metadata)];
     setCourses(nextCourses);
     saveCourses(nextCourses);
   }
@@ -1183,7 +1207,7 @@ function HistoryView({ sessions, discs, onDelete }: HistoryViewProps) {
 type CoursesViewProps = {
   courses: Course[];
   courseRuns: CourseRun[];
-  onAdd: (name: string, holes: CourseHole[]) => void;
+  onAdd: (name: string, holes: CourseHole[], metadata?: Partial<Course>) => void;
   onDelete: (courseId: string) => void;
   onStartRun: (course: Course, playerNames: string[], date: string) => void;
   onDeleteRun: (runId: string) => void;
@@ -1199,6 +1223,12 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
   const [name, setName] = useState('');
   const [holeCount, setHoleCount] = useState(18);
   const [holes, setHoles] = useState<CourseHole[]>(() => createCourseHoles(18));
+  const [importMetadata, setImportMetadata] = useState<Partial<Course> | null>(null);
+  const [importedCourses, setImportedCourses] = useState<ImportedCourse[]>([]);
+  const [courseSearch, setCourseSearch] = useState('');
+  const [courseImportStatus, setCourseImportStatus] = useState('');
+  const [courseImportError, setCourseImportError] = useState('');
+  const [loadingCourses, setLoadingCourses] = useState(false);
   const [startSetup, setStartSetup] = useState<CourseStartSetup | null>(null);
 
   function updateHoleCount(value: number) {
@@ -1226,11 +1256,60 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
       return;
     }
 
-    onAdd(name, holes);
+    onAdd(name, holes, importMetadata ?? undefined);
     setName('');
     setHoleCount(18);
     setHoles(createCourseHoles(18));
+    setImportMetadata(null);
   }
+
+  async function findNearbyCourses() {
+    setLoadingCourses(true);
+    setCourseImportError('');
+    setCourseImportStatus('Loading DiscGolfAPI courses...');
+
+    let location: Coordinates | null = null;
+
+    try {
+      location = await getCurrentCoordinates();
+    } catch {
+      setCourseImportStatus('Location unavailable. Showing Finland course list.');
+    }
+
+    try {
+      const coursesFromApi = await fetchFinlandDiscGolfCourses();
+      setImportedCourses(sortImportedCourses(coursesFromApi, location));
+      setCourseImportStatus(location ? 'Showing nearest Finnish courses.' : 'Showing Finnish courses. Use search to filter.');
+    } catch {
+      setImportedCourses([]);
+      setCourseImportError('Could not load DiscGolfAPI courses. Check connection and try again.');
+      setCourseImportStatus('');
+    } finally {
+      setLoadingCourses(false);
+    }
+  }
+
+  function importCourse(importedCourse: ImportedCourse) {
+    const draft = createCourseDraftFromImport(importedCourse);
+
+    setName(draft.name);
+    setHoleCount(draft.holes.length);
+    setHoles(draft.holes);
+    setImportMetadata(draft.metadata);
+    setCourseImportStatus(`${importedCourse.name} loaded as editable draft.`);
+  }
+
+  const visibleImportedCourses = importedCourses
+    .filter((course) => {
+      const search = courseSearch.trim().toLowerCase();
+
+      if (!search) {
+        return true;
+      }
+
+      return `${course.name} ${course.locality}`.toLowerCase().includes(search);
+    })
+    .slice(0, 30);
 
   function beginStart(courseId: string) {
     setStartSetup({ courseId, date: todayIsoDate(), players: ['Player 1'] });
@@ -1281,9 +1360,87 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
 
   return (
     <section className="courses-panel" aria-label="Courses">
+      <section className="course-finder" aria-label="Find nearby courses">
+        <div className="section-heading compact-heading">
+          <div>
+            <h2>Find nearby courses</h2>
+            <p>{DISCGOLFAPI_ATTRIBUTION}</p>
+          </div>
+        </div>
+
+        <button
+          className="primary-action"
+          type="button"
+          onClick={findNearbyCourses}
+          disabled={loadingCourses}
+          data-testid="find-nearby-courses"
+        >
+          <Map size={18} />
+          {loadingCourses ? 'Loading...' : 'Find nearby courses'}
+        </button>
+
+        {importedCourses.length > 0 && (
+          <label>
+            Search courses
+            <input
+              value={courseSearch}
+              onChange={(event) => setCourseSearch(event.target.value)}
+              data-testid="course-search"
+              placeholder="Course or city"
+            />
+          </label>
+        )}
+
+        {courseImportStatus && (
+          <p className="import-status" role="status">
+            {courseImportStatus}
+          </p>
+        )}
+        {courseImportError && (
+          <p className="import-error" role="alert">
+            {courseImportError}
+          </p>
+        )}
+
+        {visibleImportedCourses.length > 0 && (
+          <section className="import-course-list" aria-label="DiscGolfAPI courses">
+            {visibleImportedCourses.map((course) => {
+              const alreadySaved = isCourseAlreadyImported(courses, course);
+
+              return (
+                <article className="import-course-card" key={course.sourceId} data-testid="import-course-card">
+                  <div>
+                    <h3>{course.name}</h3>
+                    <p>
+                      {course.locality || 'Finland'}
+                      {course.distanceKm !== undefined ? ` - ${course.distanceKm.toFixed(1)} km` : ''}
+                    </p>
+                    <span>
+                      {course.holeCount ? `${course.holeCount} holes` : '18-hole editable draft'}{' '}
+                      {course.lengthMeters ? `- ${course.lengthMeters} m layout` : ''}
+                    </span>
+                  </div>
+                  <button
+                    className="secondary-action"
+                    type="button"
+                    onClick={() => importCourse(course)}
+                    disabled={alreadySaved}
+                    data-testid={`import-course-${course.sourceId}`}
+                  >
+                    <PlusCircle size={18} />
+                    {alreadySaved ? 'Saved' : 'Import'}
+                  </button>
+                </article>
+              );
+            })}
+          </section>
+        )}
+      </section>
+
       <form className="course-form" onSubmit={submitCourse}>
         <div className="section-heading compact-heading">
           <h2>Add course</h2>
+          {importMetadata?.source === 'discgolfapi' && <span>Imported draft</span>}
         </div>
 
         <label>
@@ -1342,6 +1499,13 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
             </div>
           ))}
         </div>
+
+        {importMetadata?.source === 'discgolfapi' && (
+          <p className="import-attribution" data-testid="import-attribution">
+            {importMetadata.locality ? `${importMetadata.locality}. ` : ''}
+            {importMetadata.attribution}
+          </p>
+        )}
 
         <button className="primary-action" type="submit" data-testid="add-course">
           <PlusCircle size={18} />

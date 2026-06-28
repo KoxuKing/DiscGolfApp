@@ -119,6 +119,14 @@ export type Course = {
   holes: CourseHole[];
   createdAt: string;
   updatedAt: string;
+  source?: 'discgolfapi';
+  sourceId?: string;
+  sourceSlug?: string;
+  lat?: number;
+  lon?: number;
+  locality?: string;
+  importedAt?: string;
+  attribution?: string;
 };
 
 export type CoursePlayer = {
@@ -823,6 +831,11 @@ function normalizedText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizedOptionalNumber(value: unknown) {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
 export function clampHoleCount(value: number) {
   if (!Number.isFinite(value)) {
     return 18;
@@ -890,12 +903,21 @@ function normalizeCourse(input: Partial<Course> | undefined): Course | null {
     holes,
     createdAt,
     updatedAt: normalizedText(input?.updatedAt) || createdAt,
+    ...(input?.source === 'discgolfapi' ? { source: input.source } : {}),
+    ...(normalizedText(input?.sourceId) ? { sourceId: normalizedText(input?.sourceId) } : {}),
+    ...(normalizedText(input?.sourceSlug) ? { sourceSlug: normalizedText(input?.sourceSlug) } : {}),
+    ...(normalizedOptionalNumber(input?.lat) !== undefined ? { lat: normalizedOptionalNumber(input?.lat) } : {}),
+    ...(normalizedOptionalNumber(input?.lon) !== undefined ? { lon: normalizedOptionalNumber(input?.lon) } : {}),
+    ...(normalizedText(input?.locality) ? { locality: normalizedText(input?.locality) } : {}),
+    ...(normalizedText(input?.importedAt) ? { importedAt: normalizedText(input?.importedAt) } : {}),
+    ...(normalizedText(input?.attribution) ? { attribution: normalizedText(input?.attribution) } : {}),
   };
 }
 
-export function createCourse(name: string, holes: CourseHole[]): Course {
+export function createCourse(name: string, holes: CourseHole[], metadata: Partial<Course> = {}): Course {
   const now = new Date().toISOString();
   const normalized = normalizeCourse({
+    ...metadata,
     id: makeId(),
     name,
     holes,

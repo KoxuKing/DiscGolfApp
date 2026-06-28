@@ -319,6 +319,142 @@ describe('App', () => {
     });
   });
 
+  it('finds nearby DiscGolfAPI courses, imports an editable draft, and saves metadata', async () => {
+    const user = userEvent.setup();
+    const originalFetch = globalThis.fetch;
+    const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            courses: [
+              {
+                id: 'far',
+                slug: 'far-course',
+                name: 'Far Course',
+                lat: 65,
+                lon: 25,
+                locality: 'Oulu',
+                primary_layout: { holes: 9, length_meters: 900 },
+              },
+              {
+                id: 'near',
+                slug: 'near-course',
+                name: 'Near Course',
+                lat: 61.49,
+                lon: 23.77,
+                locality: 'Tampere',
+                primary_layout: { holes: 3, length_meters: 300 },
+              },
+            ],
+          }),
+          { status: 200 }
+        )
+      )
+    );
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          latitude: 61.5,
+          longitude: 23.76,
+          accuracy: 10,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          speed: null,
+        },
+        timestamp: Date.now(),
+      } as GeolocationPosition);
+    });
+
+    Object.defineProperty(globalThis, 'fetch', { configurable: true, value: fetcher });
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition } });
+
+    try {
+      render(<App />);
+
+      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Courses' }));
+      await user.click(screen.getByTestId('find-nearby-courses'));
+
+      const importCards = await screen.findAllByTestId('import-course-card');
+      expect(importCards[0]).toHaveTextContent('Near Course');
+      expect(importCards[0]).toHaveTextContent('Tampere');
+      expect(importCards[0]).toHaveTextContent('3 holes');
+
+      await user.click(screen.getByTestId('import-course-near'));
+
+      expect(screen.getByTestId('course-name')).toHaveValue('Near Course');
+      expect(screen.getByTestId('course-hole-count')).toHaveValue(3);
+      expect(screen.getByTestId('course-hole-1-distance')).toHaveValue(100);
+      expect(screen.getByTestId('import-attribution')).toHaveTextContent('DiscGolfAPI');
+
+      await user.click(screen.getByTestId('add-course'));
+
+      const savedCourses = JSON.parse(localStorage.getItem(COURSES_KEY) ?? '[]');
+      expect(savedCourses).toHaveLength(1);
+      expect(savedCourses[0]).toMatchObject({
+        name: 'Near Course',
+        source: 'discgolfapi',
+        sourceId: 'near',
+        sourceSlug: 'near-course',
+        locality: 'Tampere',
+        lat: 61.49,
+        lon: 23.77,
+      });
+      expect(savedCourses[0].attribution).toContain('DiscGolfAPI');
+      expect(screen.getByTestId('import-course-near')).toBeDisabled();
+      expect(screen.getByTestId('import-course-near')).toHaveTextContent('Saved');
+    } finally {
+      Object.defineProperty(globalThis, 'fetch', { configurable: true, value: originalFetch });
+      if (originalGeolocation) {
+        Object.defineProperty(navigator, 'geolocation', originalGeolocation);
+      }
+    }
+  });
+
+  it('falls back to searchable Finland course list when GPS is denied', async () => {
+    const user = userEvent.setup();
+    const originalFetch = globalThis.fetch;
+    const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            courses: [
+              { id: 'oulu', name: 'Oulu Course', locality: 'Oulu' },
+              { id: 'nokia', name: 'Nokia DiscGolfPark', locality: 'Nokia' },
+            ],
+          }),
+          { status: 200 }
+        )
+      )
+    );
+    const getCurrentPosition = vi.fn((_success: PositionCallback, error: PositionErrorCallback) => {
+      error({ code: 1, message: 'Denied', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 });
+    });
+
+    Object.defineProperty(globalThis, 'fetch', { configurable: true, value: fetcher });
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition } });
+
+    try {
+      render(<App />);
+
+      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Courses' }));
+      await user.click(screen.getByTestId('find-nearby-courses'));
+
+      expect(await screen.findByRole('status')).toHaveTextContent('Showing Finnish courses');
+      await user.type(screen.getByTestId('course-search'), 'Oulu');
+
+      expect(screen.getByTestId('import-course-card')).toHaveTextContent('Oulu Course');
+      expect(screen.queryByText('Nokia DiscGolfPark')).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(globalThis, 'fetch', { configurable: true, value: originalFetch });
+      if (originalGeolocation) {
+        Object.defineProperty(navigator, 'geolocation', originalGeolocation);
+      }
+    }
+  });
+
   it('creates a course, starts a multi-player course run, records throws, and saves it locally', async () => {
     const user = userEvent.setup();
     const disc = createDisc('Zone', 'putter');
