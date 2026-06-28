@@ -1,12 +1,16 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import {
   Activity,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Copy,
   Disc3,
   Download,
+  Flag,
   History,
   Home,
+  Map,
   PlusCircle,
   RotateCcw,
   Save,
@@ -14,6 +18,7 @@ import {
   Trash2,
   Trophy,
   Undo2,
+  Users,
 } from 'lucide-react';
 import {
   approachDirections,
@@ -21,11 +26,22 @@ import {
   aiHistoryExportFilename,
   calculateProgressStats,
   canApplyThrow,
+  clampCourseDistance,
+  clampCoursePar,
+  clampHoleCount,
   clampPlannedThrows,
   completedThrows,
+  courseRunCurrentHole,
+  courseRunCurrentPlayer,
+  courseRunPlayerHole,
+  courseRunPlayerSummary,
   createDisc,
   createBlankSession,
   createAiHistoryExportText,
+  createCourse,
+  createCourseHoles,
+  createCourseRun,
+  createCourseRunThrow,
   currentThrow,
   currentThrowIndex,
   currentThrowNumber,
@@ -36,10 +52,14 @@ import {
   isSessionComplete,
   makeId,
   puttResultsForScore,
+  readStoredCourses,
+  readStoredCourseRuns,
   readDraft,
   readStoredDiscs,
   readStoredSessions,
   releaseIssues,
+  saveCourses,
+  saveCourseRuns,
   saveDiscs,
   saveDraft,
   saveSessions,
@@ -57,20 +77,28 @@ import {
   sessionScore,
   sessionThrowCount,
   sessionTitle,
+  throwAngles,
+  throwStyles,
   todayIsoDate,
   usesManualScore,
   usesProximityScore,
   windDirections,
   windStrengths,
+  type Course,
+  type CourseHole,
+  type CourseRun,
+  type CourseRunThrow,
   type Disc,
   type DiscCategory,
   type ErrorType,
   type SectionId,
+  type ThrowAngle,
   type ThrowResult,
+  type ThrowStyle,
   type TrainingSession,
 } from './training';
 
-type View = 'home' | 'new' | 'track' | 'history' | 'discs';
+type View = 'home' | 'new' | 'track' | 'history' | 'discs' | 'courses' | 'course-run';
 
 type SessionSetup = {
   trainingType: SectionId;
@@ -140,6 +168,9 @@ function App() {
   const [draft, setDraft] = useState<TrainingSession | null>(() => initialDraft);
   const [sessions, setSessions] = useState<TrainingSession[]>(() => readStoredSessions());
   const [discs, setDiscs] = useState<Disc[]>(() => readStoredDiscs());
+  const [courses, setCourses] = useState<Course[]>(() => readStoredCourses());
+  const [courseRuns, setCourseRuns] = useState<CourseRun[]>(() => readStoredCourseRuns());
+  const [activeCourseRun, setActiveCourseRun] = useState<CourseRun | null>(null);
   const [activeView, setActiveView] = useState<View>(() => (initialDraft ? 'track' : 'home'));
   const [setup, setSetup] = useState<SessionSetup>(() => createSessionSetup());
 
@@ -323,14 +354,153 @@ function App() {
     saveDiscs(nextDiscs);
   }
 
+  function addCourse(name: string, holes: CourseHole[]) {
+    const nextCourses = [...courses, createCourse(name, holes)];
+    setCourses(nextCourses);
+    saveCourses(nextCourses);
+  }
+
+  function deleteCourse(courseId: string) {
+    const nextCourses = courses.filter((course) => course.id !== courseId);
+    setCourses(nextCourses);
+    saveCourses(nextCourses);
+  }
+
+  function startCourseRun(course: Course, playerNames: string[], date: string) {
+    const nextRun = createCourseRun(course, playerNames, date);
+    setActiveCourseRun(nextRun);
+    setActiveView('course-run');
+  }
+
+  function updateActiveCourseRun(updater: (current: CourseRun) => CourseRun) {
+    setActiveCourseRun((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return updater(current);
+    });
+  }
+
+  function addThrowToCourseRun(throwInput: Partial<Omit<CourseRunThrow, 'id' | 'throwNumber' | 'createdAt'>>) {
+    updateActiveCourseRun((current) => {
+      const hole = courseRunCurrentHole(current);
+      const player = courseRunCurrentPlayer(current);
+
+      if (!hole || !player) {
+        return current;
+      }
+
+      const playerHole = courseRunPlayerHole(current, current.currentHoleIndex, player.id);
+      const nextThrow = createCourseRunThrow(playerHole.throws.length + 1, throwInput);
+      const nextHoles = current.holes.map((currentHole, index) => {
+        if (index !== current.currentHoleIndex) {
+          return currentHole;
+        }
+
+        return {
+          ...currentHole,
+          players: {
+            ...currentHole.players,
+            [player.id]: {
+              ...playerHole,
+              throws: [...playerHole.throws, nextThrow],
+            },
+          },
+        };
+      });
+
+      return { ...current, holes: nextHoles, updatedAt: new Date().toISOString() };
+    });
+  }
+
+  function updateCourseRunHoleNotes(notes: string) {
+    updateActiveCourseRun((current) => {
+      const hole = courseRunCurrentHole(current);
+      const player = courseRunCurrentPlayer(current);
+
+      if (!hole || !player) {
+        return current;
+      }
+
+      const playerHole = courseRunPlayerHole(current, current.currentHoleIndex, player.id);
+      const nextHoles = current.holes.map((currentHole, index) => {
+        if (index !== current.currentHoleIndex) {
+          return currentHole;
+        }
+
+        return {
+          ...currentHole,
+          players: {
+            ...currentHole.players,
+            [player.id]: {
+              ...playerHole,
+              notes,
+            },
+          },
+        };
+      });
+
+      return { ...current, holes: nextHoles, updatedAt: new Date().toISOString() };
+    });
+  }
+
+  function navigateCourseRun(holeIndex: number, playerIndex: number) {
+    updateActiveCourseRun((current) => ({
+      ...current,
+      currentHoleIndex: Math.min(Math.max(0, holeIndex), current.holes.length - 1),
+      currentPlayerIndex: Math.min(Math.max(0, playerIndex), current.players.length - 1),
+    }));
+  }
+
+  function saveActiveCourseRun() {
+    if (!activeCourseRun) {
+      return;
+    }
+
+    const savedRun: CourseRun = {
+      ...activeCourseRun,
+      status: 'saved',
+      updatedAt: new Date().toISOString(),
+    };
+    const nextRuns = [savedRun, ...courseRuns.filter((run) => run.id !== savedRun.id)];
+
+    setCourseRuns(nextRuns);
+    saveCourseRuns(nextRuns);
+    setActiveCourseRun(null);
+    setActiveView('courses');
+  }
+
+  function deleteCourseRun(runId: string) {
+    const nextRuns = courseRuns.filter((run) => run.id !== runId);
+    setCourseRuns(nextRuns);
+    saveCourseRuns(nextRuns);
+  }
+
   return (
-    <main className={`app-shell ${activeView === 'track' ? 'tracking-shell' : ''}`}>
+    <main className={`app-shell ${activeView === 'track' || activeView === 'course-run' ? 'tracking-shell' : ''}`}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Disc golf</p>
-          <h1>{activeView === 'track' && draft ? sessionTitle(draft) : 'Training tracker'}</h1>
+          <h1>
+            {activeView === 'track' && draft
+              ? sessionTitle(draft)
+              : activeView === 'course-run' && activeCourseRun
+                ? activeCourseRun.courseName
+                : 'Training tracker'}
+          </h1>
         </div>
-        {draft ? (
+        {activeView === 'course-run' && activeCourseRun ? (
+          <div
+            className="score-badge"
+            aria-label={`Course run hole ${courseRunCurrentHole(activeCourseRun)?.number ?? 1} of ${activeCourseRun.holes.length}`}
+            data-testid="course-run-status"
+          >
+            <strong>{courseRunCurrentHole(activeCourseRun)?.number ?? 1}</strong>
+            <span>/ {activeCourseRun.holes.length}</span>
+            <em>{courseRunCurrentPlayer(activeCourseRun)?.name ?? 'Player'}</em>
+          </div>
+        ) : draft ? (
           <div
             className="score-badge"
             aria-label={sessionScoreAriaLabel(draft)}
@@ -348,7 +518,7 @@ function App() {
         )}
       </header>
 
-      {activeView !== 'track' && (
+      {activeView !== 'track' && activeView !== 'course-run' && (
         <section className="stats-grid" aria-label="Progress stats">
           <StatCard
             icon={<Activity size={18} />}
@@ -391,10 +561,20 @@ function App() {
           <History size={18} />
           History
         </button>
+        <button className={activeView === 'courses' ? 'active' : ''} onClick={() => setActiveView('courses')}>
+          <Map size={18} />
+          Courses
+        </button>
         <button className={activeView === 'discs' ? 'active' : ''} onClick={() => setActiveView('discs')}>
           <Disc3 size={18} />
           Discs
         </button>
+        {activeCourseRun && (
+          <button className={activeView === 'course-run' ? 'active' : ''} onClick={() => setActiveView('course-run')}>
+            <Flag size={18} />
+            Round
+          </button>
+        )}
       </nav>
 
       {activeView === 'home' && (
@@ -403,6 +583,7 @@ function App() {
           onNew={() => setActiveView('new')}
           onContinue={() => setActiveView('track')}
           onHistory={() => setActiveView('history')}
+          onCourses={() => setActiveView('courses')}
           onDiscs={() => setActiveView('discs')}
         />
       )}
@@ -435,11 +616,43 @@ function App() {
           hasDraft={false}
           onNew={() => setActiveView('new')}
           onHistory={() => setActiveView('history')}
+          onCourses={() => setActiveView('courses')}
           onDiscs={() => setActiveView('discs')}
         />
       )}
 
       {activeView === 'history' && <HistoryView sessions={sessions} discs={discs} onDelete={deleteSession} />}
+      {activeView === 'courses' && (
+        <CoursesView
+          courses={courses}
+          courseRuns={courseRuns}
+          onAdd={addCourse}
+          onDelete={deleteCourse}
+          onStartRun={startCourseRun}
+          onDeleteRun={deleteCourseRun}
+        />
+      )}
+      {activeView === 'course-run' && activeCourseRun && (
+        <CourseRunView
+          run={activeCourseRun}
+          discs={discs}
+          onAddThrow={addThrowToCourseRun}
+          onHoleNotesChange={updateCourseRunHoleNotes}
+          onNavigate={navigateCourseRun}
+          onSave={saveActiveCourseRun}
+          onCourses={() => setActiveView('courses')}
+        />
+      )}
+      {activeView === 'course-run' && !activeCourseRun && (
+        <CoursesView
+          courses={courses}
+          courseRuns={courseRuns}
+          onAdd={addCourse}
+          onDelete={deleteCourse}
+          onStartRun={startCourseRun}
+          onDeleteRun={deleteCourseRun}
+        />
+      )}
       {activeView === 'discs' && <DiscsView discs={discs} onAdd={addDisc} onDelete={deleteDisc} />}
     </main>
   );
@@ -450,10 +663,11 @@ type HomeViewProps = {
   onNew: () => void;
   onContinue?: () => void;
   onHistory: () => void;
+  onCourses: () => void;
   onDiscs: () => void;
 };
 
-function HomeView({ hasDraft, onNew, onContinue, onHistory, onDiscs }: HomeViewProps) {
+function HomeView({ hasDraft, onNew, onContinue, onHistory, onCourses, onDiscs }: HomeViewProps) {
   return (
     <section className="main-menu" aria-label="Main menu">
       <button className="primary-action menu-action" type="button" onClick={onNew} data-testid="new-session">
@@ -469,6 +683,10 @@ function HomeView({ hasDraft, onNew, onContinue, onHistory, onDiscs }: HomeViewP
       <button className="secondary-action menu-action" type="button" onClick={onHistory}>
         <History size={20} />
         History
+      </button>
+      <button className="secondary-action menu-action" type="button" onClick={onCourses}>
+        <Map size={20} />
+        Courses
       </button>
       <button className="secondary-action menu-action" type="button" onClick={onDiscs}>
         <Disc3 size={20} />
@@ -959,6 +1177,552 @@ function HistoryView({ sessions, discs, onDelete }: HistoryViewProps) {
         </article>
       ))}
     </section>
+  );
+}
+
+type CoursesViewProps = {
+  courses: Course[];
+  courseRuns: CourseRun[];
+  onAdd: (name: string, holes: CourseHole[]) => void;
+  onDelete: (courseId: string) => void;
+  onStartRun: (course: Course, playerNames: string[], date: string) => void;
+  onDeleteRun: (runId: string) => void;
+};
+
+type CourseStartSetup = {
+  courseId: string;
+  date: string;
+  players: string[];
+};
+
+function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDeleteRun }: CoursesViewProps) {
+  const [name, setName] = useState('');
+  const [holeCount, setHoleCount] = useState(18);
+  const [holes, setHoles] = useState<CourseHole[]>(() => createCourseHoles(18));
+  const [startSetup, setStartSetup] = useState<CourseStartSetup | null>(null);
+
+  function updateHoleCount(value: number) {
+    const nextCount = clampHoleCount(value);
+    const generatedHoles = createCourseHoles(nextCount);
+
+    setHoleCount(nextCount);
+    setHoles((current) =>
+      generatedHoles.map((generatedHole, index) =>
+        current[index] ? { ...current[index], number: index + 1 } : generatedHole
+      )
+    );
+  }
+
+  function updateHole(index: number, patch: Partial<CourseHole>) {
+    setHoles((current) =>
+      current.map((hole, holeIndex) => (holeIndex === index ? { ...hole, ...patch, number: holeIndex + 1 } : hole))
+    );
+  }
+
+  function submitCourse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!name.trim()) {
+      return;
+    }
+
+    onAdd(name, holes);
+    setName('');
+    setHoleCount(18);
+    setHoles(createCourseHoles(18));
+  }
+
+  function beginStart(courseId: string) {
+    setStartSetup({ courseId, date: todayIsoDate(), players: ['Player 1'] });
+  }
+
+  function updateStartSetup(patch: Partial<CourseStartSetup>) {
+    setStartSetup((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function updatePlayerName(index: number, playerName: string) {
+    setStartSetup((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        players: current.players.map((nameValue, playerIndex) => (playerIndex === index ? playerName : nameValue)),
+      };
+    });
+  }
+
+  function addPlayerField() {
+    setStartSetup((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        players: [...current.players, `Player ${current.players.length + 1}`],
+      };
+    });
+  }
+
+  function removePlayerField(index: number) {
+    setStartSetup((current) => {
+      if (!current || current.players.length === 1) {
+        return current;
+      }
+
+      return {
+        ...current,
+        players: current.players.filter((_player, playerIndex) => playerIndex !== index),
+      };
+    });
+  }
+
+  return (
+    <section className="courses-panel" aria-label="Courses">
+      <form className="course-form" onSubmit={submitCourse}>
+        <div className="section-heading compact-heading">
+          <h2>Add course</h2>
+        </div>
+
+        <label>
+          Course name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            data-testid="course-name"
+            placeholder="Home course"
+          />
+        </label>
+
+        <label>
+          Holes
+          <input
+            inputMode="numeric"
+            type="number"
+            min="1"
+            max="36"
+            value={holeCount}
+            onChange={(event) => updateHoleCount(Number(event.target.value))}
+            data-testid="course-hole-count"
+          />
+        </label>
+
+        <div className="course-hole-editor" aria-label="Course holes">
+          {holes.map((hole, index) => (
+            <div className="course-hole-row" key={hole.id}>
+              <span>Hole {hole.number}</span>
+              <label>
+                Par
+                <input
+                  inputMode="numeric"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={hole.par}
+                  onChange={(event) => updateHole(index, { par: clampCoursePar(Number(event.target.value)) })}
+                  data-testid={`course-hole-${hole.number}-par`}
+                />
+              </label>
+              <label>
+                Distance
+                <input
+                  inputMode="numeric"
+                  type="number"
+                  min="1"
+                  max="500"
+                  value={hole.distanceMeters}
+                  onChange={(event) =>
+                    updateHole(index, { distanceMeters: clampCourseDistance(Number(event.target.value)) })
+                  }
+                  data-testid={`course-hole-${hole.number}-distance`}
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <button className="primary-action" type="submit" data-testid="add-course">
+          <PlusCircle size={18} />
+          Add course
+        </button>
+      </form>
+
+      {courses.length === 0 ? (
+        <section className="empty-history">
+          <Map size={28} />
+          <h2>No courses yet</h2>
+        </section>
+      ) : (
+        <section className="course-list" aria-label="Saved courses">
+          {courses.map((course) => {
+            const totalPar = course.holes.reduce((sum, hole) => sum + hole.par, 0);
+            const totalDistance = course.holes.reduce((sum, hole) => sum + hole.distanceMeters, 0);
+            const isStarting = startSetup?.courseId === course.id;
+
+            return (
+              <article className="course-card" key={course.id} data-testid="course-card">
+                <div>
+                  <h2>{course.name}</h2>
+                  <p>
+                    {course.holes.length} holes - Par {totalPar} - {totalDistance} m
+                  </p>
+                </div>
+
+                {isStarting && startSetup ? (
+                  <section className="course-start-panel" aria-label={`Start ${course.name}`}>
+                    <label>
+                      Round date
+                      <input
+                        type="date"
+                        value={startSetup.date}
+                        onChange={(event) => updateStartSetup({ date: event.target.value })}
+                        data-testid="course-run-date"
+                      />
+                    </label>
+
+                    <div className="course-player-list">
+                      {startSetup.players.map((playerName, index) => (
+                        <label key={`${course.id}-${index}`}>
+                          Player {index + 1}
+                          <span className="player-input-row">
+                            <input
+                              value={playerName}
+                              onChange={(event) => updatePlayerName(index, event.target.value)}
+                              data-testid={`course-player-${index}`}
+                            />
+                            {startSetup.players.length > 1 && (
+                              <button
+                                className="delete-action compact-delete"
+                                type="button"
+                                onClick={() => removePlayerField(index)}
+                                title={`Remove player ${index + 1}`}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="course-start-actions">
+                      <button className="secondary-action" type="button" onClick={addPlayerField} data-testid="add-player">
+                        <Users size={18} />
+                        Add player
+                      </button>
+                      <button
+                        className="primary-action"
+                        type="button"
+                        onClick={() => {
+                          onStartRun(course, startSetup.players, startSetup.date);
+                          setStartSetup(null);
+                        }}
+                        data-testid="start-course-run"
+                      >
+                        <Flag size={18} />
+                        Start round
+                      </button>
+                    </div>
+                  </section>
+                ) : (
+                  <button
+                    className="primary-action"
+                    type="button"
+                    onClick={() => beginStart(course.id)}
+                    data-testid="start-course"
+                  >
+                    <Flag size={18} />
+                    Start course
+                  </button>
+                )}
+
+                <button
+                  className="delete-action"
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Delete this course?')) {
+                      onDelete(course.id);
+                    }
+                  }}
+                  title={`Delete ${course.name}`}
+                >
+                  <Trash2 size={17} />
+                  Delete course
+                </button>
+              </article>
+            );
+          })}
+        </section>
+      )}
+
+      {courseRuns.length > 0 && (
+        <section className="course-run-history" aria-label="Saved course runs">
+          <div className="section-heading compact-heading">
+            <h2>Saved course runs</h2>
+          </div>
+
+          {courseRuns.map((run) => (
+            <article className="course-run-card" key={run.id} data-testid="course-run-card">
+              <div>
+                <h2>{run.courseName}</h2>
+                <p>
+                  {run.date} - {run.players.length} player{run.players.length === 1 ? '' : 's'} - {run.holes.length}{' '}
+                  holes
+                </p>
+              </div>
+              <div className="course-run-player-summary">
+                {run.players.map((player) => (
+                  <span key={player.id}>
+                    {player.name}: {courseRunPlayerSummary(run, player.id)}
+                  </span>
+                ))}
+              </div>
+              <button
+                className="delete-action"
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Delete this course run?')) {
+                    onDeleteRun(run.id);
+                  }
+                }}
+              >
+                <Trash2 size={17} />
+                Delete run
+              </button>
+            </article>
+          ))}
+        </section>
+      )}
+    </section>
+  );
+}
+
+type CourseRunViewProps = {
+  run: CourseRun;
+  discs: Disc[];
+  onAddThrow: (throwInput: Partial<Omit<CourseRunThrow, 'id' | 'throwNumber' | 'createdAt'>>) => void;
+  onHoleNotesChange: (notes: string) => void;
+  onNavigate: (holeIndex: number, playerIndex: number) => void;
+  onSave: () => void;
+  onCourses: () => void;
+};
+
+function CourseRunView({
+  run,
+  discs,
+  onAddThrow,
+  onHoleNotesChange,
+  onNavigate,
+  onSave,
+  onCourses,
+}: CourseRunViewProps) {
+  const [discId, setDiscId] = useState('');
+  const [style, setStyle] = useState<ThrowStyle>('');
+  const [angle, setAngle] = useState<ThrowAngle>('');
+  const [throwNotes, setThrowNotes] = useState('');
+  const hole = courseRunCurrentHole(run);
+  const player = courseRunCurrentPlayer(run);
+
+  if (!hole || !player) {
+    return (
+      <section className="empty-history">
+        <Flag size={28} />
+        <h2>No active round</h2>
+      </section>
+    );
+  }
+
+  const playerHole = courseRunPlayerHole(run, run.currentHoleIndex, player.id);
+  const lastThrow = playerHole.throws[playerHole.throws.length - 1];
+  const positionNumber = run.currentHoleIndex * run.players.length + run.currentPlayerIndex + 1;
+  const positionCount = run.holes.length * run.players.length;
+  const atStart = run.currentHoleIndex === 0 && run.currentPlayerIndex === 0;
+  const atEnd = run.currentHoleIndex === run.holes.length - 1 && run.currentPlayerIndex === run.players.length - 1;
+
+  function previousPosition() {
+    if (run.currentPlayerIndex > 0) {
+      onNavigate(run.currentHoleIndex, run.currentPlayerIndex - 1);
+      return;
+    }
+
+    if (run.currentHoleIndex > 0) {
+      onNavigate(run.currentHoleIndex - 1, run.players.length - 1);
+    }
+  }
+
+  function nextPosition() {
+    if (run.currentPlayerIndex < run.players.length - 1) {
+      onNavigate(run.currentHoleIndex, run.currentPlayerIndex + 1);
+      return;
+    }
+
+    if (run.currentHoleIndex < run.holes.length - 1) {
+      onNavigate(run.currentHoleIndex + 1, 0);
+    }
+  }
+
+  function addThrow() {
+    onAddThrow({ discId, style, angle, notes: throwNotes });
+    setThrowNotes('');
+  }
+
+  return (
+    <>
+      <section className="course-run-panel" aria-label="Active course run">
+        <div className="track-status">
+          <div>
+            <span>Hole</span>
+            <strong>
+              {hole.number} / {run.holes.length}
+            </strong>
+          </div>
+          <div>
+            <span>Par</span>
+            <strong>{hole.par}</strong>
+          </div>
+          <div>
+            <span>Distance</span>
+            <strong>{hole.distanceMeters} m</strong>
+          </div>
+        </div>
+
+        <div className="summary-bar" aria-hidden="true">
+          <span style={{ width: `${Math.min(100, (positionNumber / positionCount) * 100)}%` }} />
+        </div>
+
+        <div className="player-switcher" role="group" aria-label="Players">
+          {run.players.map((runPlayer, index) => (
+            <button
+              key={runPlayer.id}
+              className={runPlayer.id === player.id ? 'active' : ''}
+              type="button"
+              onClick={() => onNavigate(run.currentHoleIndex, index)}
+            >
+              {runPlayer.name}
+            </button>
+          ))}
+        </div>
+
+        <p className="session-line">
+          {player.name}: {courseRunPlayerSummary(run, player.id)}
+        </p>
+
+        <article className="current-throw-card course-throw-card" data-testid="course-run-current-hole">
+          <h2>
+            Hole {hole.number} - {player.name}
+          </h2>
+
+          <div className="current-detail-grid">
+            <label className="detail-field wide-field">
+              Disc
+              <select value={discId} onChange={(event) => setDiscId(event.target.value)} data-testid="course-run-disc">
+                <option value="">No disc</option>
+                {discs.map((disc) => (
+                  <option key={disc.id} value={disc.id}>
+                    {disc.name} - {disc.category}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="detail-field">
+              Style
+              <select
+                value={style}
+                onChange={(event) => setStyle(event.target.value as ThrowStyle)}
+                data-testid="course-run-style"
+              >
+                {throwStyles.map((throwStyle) => (
+                  <option key={throwStyle || 'none'} value={throwStyle}>
+                    {throwStyle || 'No style'}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="detail-field">
+              Angle
+              <select
+                value={angle}
+                onChange={(event) => setAngle(event.target.value as ThrowAngle)}
+                data-testid="course-run-angle"
+              >
+                {throwAngles.map((throwAngle) => (
+                  <option key={throwAngle || 'none'} value={throwAngle}>
+                    {throwAngle || 'No angle'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="detail-field compact-notes">
+            Throw notes
+            <textarea
+              value={throwNotes}
+              onChange={(event) => setThrowNotes(event.target.value)}
+              rows={2}
+              data-testid="course-run-throw-notes"
+              placeholder="Line, footing, release..."
+            />
+          </label>
+
+          <button className="primary-action apply-throw-action" type="button" onClick={addThrow} data-testid="add-course-throw">
+            <PlusCircle size={18} />
+            Add throw
+          </button>
+
+          <p className="course-throw-count">
+            Throws on this hole: <strong>{playerHole.throws.length}</strong>
+          </p>
+
+          {lastThrow && (
+            <p className="last-throw">
+              Last: {lastThrow.style || 'no style'}, {lastThrow.angle || 'no angle'}
+              {lastThrow.notes ? ` - ${lastThrow.notes}` : ''}
+            </p>
+          )}
+        </article>
+
+        <label className="detail-field compact-notes">
+          Hole notes
+          <textarea
+            value={playerHole.notes}
+            onChange={(event) => onHoleNotesChange(event.target.value)}
+            rows={2}
+            data-testid="course-run-hole-notes"
+            placeholder="Lie, wind, decision, mistake..."
+          />
+        </label>
+      </section>
+
+      <div className="action-bar">
+        <button className="secondary-action" type="button" onClick={onCourses}>
+          <Map size={18} />
+          Courses
+        </button>
+        <button className="secondary-action" type="button" onClick={previousPosition} disabled={atStart}>
+          <ChevronLeft size={18} />
+          Prev
+        </button>
+        <button
+          className="secondary-action"
+          type="button"
+          onClick={nextPosition}
+          disabled={atEnd}
+          data-testid="course-run-next"
+        >
+          Next
+          <ChevronRight size={18} />
+        </button>
+        <button className="primary-action" type="button" onClick={onSave} data-testid="save-course-run">
+          <Save size={18} />
+          Save
+        </button>
+      </div>
+    </>
   );
 }
 

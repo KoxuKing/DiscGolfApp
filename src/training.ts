@@ -1,6 +1,8 @@
 export const STORAGE_KEY = 'disc-golf-training-sessions-v1';
 export const DRAFT_KEY = 'disc-golf-training-draft-v1';
 export const DISCS_KEY = 'disc-golf-training-discs-v1';
+export const COURSES_KEY = 'disc-golf-courses-v1';
+export const COURSE_RUNS_KEY = 'disc-golf-course-runs-v1';
 
 export type SectionId = 'approaches' | 'putting' | 'midranges' | 'forehand';
 export type TrainingType = SectionId | 'full';
@@ -30,6 +32,8 @@ export type PuttResult =
   | 'miss long';
 export type ApproachDirection = '' | 'left' | 'right' | 'front' | 'back';
 export type ReleaseIssue = '' | 'wobble' | 'too high' | 'too low' | 'griplock' | 'early release';
+export type ThrowStyle = '' | 'backhand' | 'forehand' | 'putt' | 'approach' | 'roller' | 'overhand';
+export type ThrowAngle = '' | 'hyzer' | 'flat' | 'anhyzer' | 'nose up' | 'nose down';
 
 export type ScoreOption = {
   value: number;
@@ -100,6 +104,66 @@ export type Disc = {
   name: string;
   category: DiscCategory;
   createdAt: string;
+};
+
+export type CourseHole = {
+  id: string;
+  number: number;
+  par: number;
+  distanceMeters: number;
+};
+
+export type Course = {
+  id: string;
+  name: string;
+  holes: CourseHole[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CoursePlayer = {
+  id: string;
+  name: string;
+};
+
+export type CourseRunThrow = {
+  id: string;
+  throwNumber: number;
+  discId: string;
+  style: ThrowStyle;
+  angle: ThrowAngle;
+  notes: string;
+  createdAt: string;
+};
+
+export type CourseRunPlayerHole = {
+  throws: CourseRunThrow[];
+  notes: string;
+};
+
+export type CourseRunHole = {
+  holeId: string;
+  number: number;
+  par: number;
+  distanceMeters: number;
+  players: Record<string, CourseRunPlayerHole>;
+};
+
+export type CourseRunStatus = 'active' | 'saved';
+
+export type CourseRun = {
+  id: string;
+  courseId: string;
+  courseName: string;
+  date: string;
+  players: CoursePlayer[];
+  currentHoleIndex: number;
+  currentPlayerIndex: number;
+  holes: CourseRunHole[];
+  status: CourseRunStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AiHistoryExport = ReturnType<typeof createAiHistoryExport>;
@@ -212,6 +276,8 @@ export const releaseIssues: ReleaseIssue[] = ['', 'wobble', 'too high', 'too low
 export const windDirections = ['', 'Headwind', 'Tailwind', 'Left-to-right', 'Right-to-left', 'Swirling'];
 export const windStrengths = ['', 'Calm', 'Light', 'Medium', 'Strong', 'Gusty'];
 export const discCategories: DiscCategory[] = ['putter', 'mid-range', 'fairway driver', 'distance driver'];
+export const throwStyles: ThrowStyle[] = ['', 'backhand', 'forehand', 'putt', 'approach', 'roller', 'overhand'];
+export const throwAngles: ThrowAngle[] = ['', 'hyzer', 'flat', 'anhyzer', 'nose up', 'nose down'];
 export const defaultProximityDistanceMeters = '5';
 export const defaultProximityDirection: ApproachDirection = 'front';
 
@@ -753,8 +819,332 @@ export function readStoredDiscs(): Disc[] {
   }
 }
 
+function normalizedText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function clampHoleCount(value: number) {
+  if (!Number.isFinite(value)) {
+    return 18;
+  }
+
+  return Math.min(36, Math.max(1, Math.round(value)));
+}
+
+export function clampCoursePar(value: number) {
+  if (!Number.isFinite(value)) {
+    return 3;
+  }
+
+  return Math.min(10, Math.max(1, Math.round(value)));
+}
+
+export function clampCourseDistance(value: number) {
+  if (!Number.isFinite(value)) {
+    return 80;
+  }
+
+  return Math.min(500, Math.max(1, Math.round(value)));
+}
+
+export function createCourseHole(
+  number: number,
+  options: { par?: number; distanceMeters?: number } = {}
+): CourseHole {
+  return {
+    id: makeId(),
+    number: Math.max(1, Math.round(number)),
+    par: clampCoursePar(options.par ?? 3),
+    distanceMeters: clampCourseDistance(options.distanceMeters ?? 80),
+  };
+}
+
+export function createCourseHoles(count: number) {
+  return Array.from({ length: clampHoleCount(count) }, (_value, index) => createCourseHole(index + 1));
+}
+
+function normalizeCourseHole(input: Partial<CourseHole> | undefined, index: number): CourseHole {
+  return {
+    id: normalizedText(input?.id) || makeId(),
+    number: index + 1,
+    par: clampCoursePar(Number(input?.par ?? 3)),
+    distanceMeters: clampCourseDistance(Number(input?.distanceMeters ?? 80)),
+  };
+}
+
+function normalizeCourse(input: Partial<Course> | undefined): Course | null {
+  const name = normalizedText(input?.name);
+  const holes = Array.isArray(input?.holes)
+    ? input.holes.map((hole, index) => normalizeCourseHole(hole, index))
+    : [];
+
+  if (!name || holes.length === 0) {
+    return null;
+  }
+
+  const createdAt = normalizedText(input?.createdAt) || new Date().toISOString();
+
+  return {
+    id: normalizedText(input?.id) || makeId(),
+    name,
+    holes,
+    createdAt,
+    updatedAt: normalizedText(input?.updatedAt) || createdAt,
+  };
+}
+
+export function createCourse(name: string, holes: CourseHole[]): Course {
+  const now = new Date().toISOString();
+  const normalized = normalizeCourse({
+    id: makeId(),
+    name,
+    holes,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  if (!normalized) {
+    throw new Error('Course name and at least one hole are required');
+  }
+
+  return normalized;
+}
+
+export function readStoredCourses(): Course[] {
+  try {
+    const raw = localStorage.getItem(COURSES_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as Course[];
+    return Array.isArray(parsed) ? parsed.flatMap((course) => normalizeCourse(course) ?? []) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeThrowStyle(value: unknown): ThrowStyle {
+  return throwStyles.includes(value as ThrowStyle) ? (value as ThrowStyle) : '';
+}
+
+function normalizeThrowAngle(value: unknown): ThrowAngle {
+  return throwAngles.includes(value as ThrowAngle) ? (value as ThrowAngle) : '';
+}
+
+function normalizeCoursePlayer(input: Partial<CoursePlayer> | undefined, index: number): CoursePlayer | null {
+  const name = normalizedText(input?.name) || (index === 0 ? 'Player 1' : '');
+
+  if (!name) {
+    return null;
+  }
+
+  return {
+    id: normalizedText(input?.id) || makeId(),
+    name,
+  };
+}
+
+export function createCoursePlayers(names: string[]): CoursePlayer[] {
+  const players = names
+    .map((name, index) => normalizeCoursePlayer({ id: makeId(), name }, index))
+    .filter((player): player is CoursePlayer => Boolean(player));
+
+  return players.length > 0 ? players : [{ id: makeId(), name: 'Player 1' }];
+}
+
+export function createCourseRunThrow(
+  throwNumber: number,
+  options: Partial<Omit<CourseRunThrow, 'id' | 'throwNumber' | 'createdAt'>> = {}
+): CourseRunThrow {
+  return {
+    id: makeId(),
+    throwNumber: Math.max(1, Math.round(throwNumber)),
+    discId: normalizedText(options.discId),
+    style: normalizeThrowStyle(options.style),
+    angle: normalizeThrowAngle(options.angle),
+    notes: normalizedText(options.notes),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function normalizeCourseRunThrow(input: Partial<CourseRunThrow> | undefined, index: number): CourseRunThrow {
+  return {
+    id: normalizedText(input?.id) || makeId(),
+    throwNumber: Math.max(1, Math.round(Number(input?.throwNumber ?? index + 1))),
+    discId: normalizedText(input?.discId),
+    style: normalizeThrowStyle(input?.style),
+    angle: normalizeThrowAngle(input?.angle),
+    notes: normalizedText(input?.notes),
+    createdAt: normalizedText(input?.createdAt) || new Date().toISOString(),
+  };
+}
+
+function normalizeCourseRunPlayerHole(input: Partial<CourseRunPlayerHole> | undefined): CourseRunPlayerHole {
+  const throws = Array.isArray(input?.throws)
+    ? input.throws.map((throwResult, index) => normalizeCourseRunThrow(throwResult, index))
+    : [];
+
+  return {
+    throws: throws.map((throwResult, index) => ({ ...throwResult, throwNumber: index + 1 })),
+    notes: normalizedText(input?.notes),
+  };
+}
+
+function createCourseRunHoleFromCourse(hole: CourseHole, players: CoursePlayer[]): CourseRunHole {
+  return {
+    holeId: hole.id,
+    number: hole.number,
+    par: hole.par,
+    distanceMeters: hole.distanceMeters,
+    players: players.reduce<Record<string, CourseRunPlayerHole>>((playerMap, player) => {
+      playerMap[player.id] = { throws: [], notes: '' };
+      return playerMap;
+    }, {}),
+  };
+}
+
+function normalizeCourseRunHole(
+  input: Partial<CourseRunHole> | undefined,
+  players: CoursePlayer[],
+  index: number
+): CourseRunHole {
+  const sourcePlayers = input?.players ?? {};
+
+  return {
+    holeId: normalizedText(input?.holeId) || makeId(),
+    number: index + 1,
+    par: clampCoursePar(Number(input?.par ?? 3)),
+    distanceMeters: clampCourseDistance(Number(input?.distanceMeters ?? 80)),
+    players: players.reduce<Record<string, CourseRunPlayerHole>>((playerMap, player) => {
+      playerMap[player.id] = normalizeCourseRunPlayerHole(sourcePlayers[player.id]);
+      return playerMap;
+    }, {}),
+  };
+}
+
+export function createCourseRun(course: Course, playerNames: string[], date = todayIsoDate()): CourseRun {
+  const players = createCoursePlayers(playerNames);
+  const now = new Date().toISOString();
+
+  return {
+    id: makeId(),
+    courseId: course.id,
+    courseName: course.name,
+    date,
+    players,
+    currentHoleIndex: 0,
+    currentPlayerIndex: 0,
+    holes: course.holes.map((hole) => createCourseRunHoleFromCourse(hole, players)),
+    status: 'active',
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function normalizeCourseRun(input: Partial<CourseRun> | undefined): CourseRun | null {
+  const courseName = normalizedText(input?.courseName);
+  const parsedPlayers = Array.isArray(input?.players)
+    ? input.players
+        .map((player, index) => normalizeCoursePlayer(player, index))
+        .filter((player): player is CoursePlayer => Boolean(player))
+    : [];
+  const players = parsedPlayers.length > 0 ? parsedPlayers : [{ id: makeId(), name: 'Player 1' }];
+  const holes = Array.isArray(input?.holes)
+    ? input.holes.map((hole, index) => normalizeCourseRunHole(hole, players, index))
+    : [];
+
+  if (!courseName || holes.length === 0) {
+    return null;
+  }
+
+  const createdAt = normalizedText(input?.createdAt) || new Date().toISOString();
+
+  return {
+    id: normalizedText(input?.id) || makeId(),
+    courseId: normalizedText(input?.courseId),
+    courseName,
+    date: normalizedText(input?.date) || todayIsoDate(),
+    players,
+    currentHoleIndex: Math.min(Math.max(0, Math.round(Number(input?.currentHoleIndex ?? 0))), holes.length - 1),
+    currentPlayerIndex: Math.min(Math.max(0, Math.round(Number(input?.currentPlayerIndex ?? 0))), players.length - 1),
+    holes,
+    status: input?.status === 'saved' ? 'saved' : 'active',
+    notes: normalizedText(input?.notes),
+    createdAt,
+    updatedAt: normalizedText(input?.updatedAt) || createdAt,
+  };
+}
+
+export function readStoredCourseRuns(): CourseRun[] {
+  try {
+    const raw = localStorage.getItem(COURSE_RUNS_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as CourseRun[];
+    return Array.isArray(parsed) ? parsed.flatMap((run) => normalizeCourseRun(run) ?? []) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function courseRunCurrentHole(run: CourseRun) {
+  return run.holes[run.currentHoleIndex] ?? run.holes[0];
+}
+
+export function courseRunCurrentPlayer(run: CourseRun) {
+  return run.players[run.currentPlayerIndex] ?? run.players[0];
+}
+
+export function courseRunPlayerHole(run: CourseRun, holeIndex: number, playerId: string): CourseRunPlayerHole {
+  const hole = run.holes[holeIndex];
+  return hole?.players[playerId] ?? { throws: [], notes: '' };
+}
+
+export function courseRunPlayedHoles(run: CourseRun, playerId: string) {
+  return run.holes.filter((hole) => (hole.players[playerId]?.throws.length ?? 0) > 0);
+}
+
+export function courseRunThrowsForPlayer(run: CourseRun, playerId: string) {
+  return run.holes.reduce((sum, hole) => sum + (hole.players[playerId]?.throws.length ?? 0), 0);
+}
+
+export function courseRunScoreToPar(run: CourseRun, playerId: string) {
+  const playedHoles = courseRunPlayedHoles(run, playerId);
+  const throws = playedHoles.reduce((sum, hole) => sum + (hole.players[playerId]?.throws.length ?? 0), 0);
+  const par = playedHoles.reduce((sum, hole) => sum + hole.par, 0);
+
+  return throws - par;
+}
+
+export function scoreToParLabel(scoreToPar: number) {
+  if (scoreToPar === 0) {
+    return 'E';
+  }
+
+  return scoreToPar > 0 ? `+${scoreToPar}` : String(scoreToPar);
+}
+
+export function courseRunPlayerSummary(run: CourseRun, playerId: string) {
+  const throws = courseRunThrowsForPlayer(run, playerId);
+  const holes = courseRunPlayedHoles(run, playerId).length;
+
+  return `${throws} throws, ${holes}/${run.holes.length} holes, ${scoreToParLabel(courseRunScoreToPar(run, playerId))}`;
+}
+
 export function saveDiscs(discsToSave: Disc[]) {
   localStorage.setItem(DISCS_KEY, JSON.stringify(discsToSave));
+}
+
+export function saveCourses(coursesToSave: Course[]) {
+  localStorage.setItem(COURSES_KEY, JSON.stringify(coursesToSave));
+}
+
+export function saveCourseRuns(runsToSave: CourseRun[]) {
+  localStorage.setItem(COURSE_RUNS_KEY, JSON.stringify(runsToSave));
 }
 
 export function saveSessions(sessionsToSave: TrainingSession[]) {

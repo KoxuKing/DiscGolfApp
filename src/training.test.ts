@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COURSES_KEY,
+  COURSE_RUNS_KEY,
   DISCS_KEY,
   DRAFT_KEY,
   STORAGE_KEY,
@@ -10,10 +12,20 @@ import {
   createAiHistoryExport,
   createAiHistoryExportText,
   createBlankSession,
+  createCourse,
+  createCourseHoles,
+  createCourseRun,
+  createCourseRunThrow,
   createDisc,
+  courseRunPlayerSummary,
+  courseRunScoreToPar,
   readDraft,
+  readStoredCourseRuns,
+  readStoredCourses,
   readStoredDiscs,
   readStoredSessions,
+  saveCourseRuns,
+  saveCourses,
   saveDiscs,
   saveDraft,
   saveSessions,
@@ -169,6 +181,77 @@ describe('training model', () => {
 
     localStorage.setItem(DISCS_KEY, 'not json');
     expect(readStoredDiscs()).toEqual([]);
+  });
+
+  it('creates and stores courses with local course runs for multiple players', () => {
+    const course = createCourse(
+      '  Local Park  ',
+      createCourseHoles(2).map((hole, index) => ({
+        ...hole,
+        par: index === 0 ? 3 : 4,
+        distanceMeters: index === 0 ? 85 : 126,
+      }))
+    );
+
+    saveCourses([course]);
+
+    expect(JSON.parse(localStorage.getItem(COURSES_KEY) ?? '[]')).toHaveLength(1);
+    expect(readStoredCourses()[0]).toMatchObject({
+      name: 'Local Park',
+      holes: [
+        { number: 1, par: 3, distanceMeters: 85 },
+        { number: 2, par: 4, distanceMeters: 126 },
+      ],
+    });
+
+    const run = createCourseRun(course, ['Alex', 'Sam'], '2026-06-28');
+    const alex = run.players[0];
+
+    run.holes[0].players[alex.id].throws.push(
+      createCourseRunThrow(1, {
+        discId: 'disc-zone',
+        style: 'backhand',
+        angle: 'hyzer',
+        notes: 'Safe gap',
+      }),
+      createCourseRunThrow(2, {
+        style: 'putt',
+        angle: 'flat',
+      })
+    );
+    run.holes[0].players[alex.id].notes = 'Good first shot.';
+
+    saveCourseRuns([run]);
+
+    expect(JSON.parse(localStorage.getItem(COURSE_RUNS_KEY) ?? '[]')).toHaveLength(1);
+
+    const storedRun = readStoredCourseRuns()[0];
+
+    expect(storedRun).toMatchObject({
+      courseName: 'Local Park',
+      date: '2026-06-28',
+      players: [{ name: 'Alex' }, { name: 'Sam' }],
+      holes: [
+        { number: 1, par: 3, distanceMeters: 85 },
+        { number: 2, par: 4, distanceMeters: 126 },
+      ],
+    });
+    expect(storedRun.holes[0].players[alex.id].throws[0]).toMatchObject({
+      throwNumber: 1,
+      discId: 'disc-zone',
+      style: 'backhand',
+      angle: 'hyzer',
+      notes: 'Safe gap',
+    });
+    expect(storedRun.holes[0].players[alex.id].notes).toBe('Good first shot.');
+    expect(courseRunScoreToPar(storedRun, alex.id)).toBe(-1);
+    expect(courseRunPlayerSummary(storedRun, alex.id)).toBe('2 throws, 1/2 holes, -1');
+
+    localStorage.setItem(COURSES_KEY, 'not json');
+    localStorage.setItem(COURSE_RUNS_KEY, '{}');
+
+    expect(readStoredCourses()).toEqual([]);
+    expect(readStoredCourseRuns()).toEqual([]);
   });
 
   it('summarizes the most common tracked parameter in one session', () => {

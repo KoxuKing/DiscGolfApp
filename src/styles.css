@@ -291,7 +291,11 @@ h1 {
 .main-menu,
 .new-session,
 .discs-panel,
-.disc-list {
+.disc-list,
+.courses-panel,
+.course-list,
+.course-run-history,
+.course-run-panel {
   display: grid;
   gap: 12px;
 }
@@ -707,12 +711,154 @@ textarea {
   background: #ffffff;
 }
 
-.disc-form label {
+.disc-form label,
+.course-form label,
+.course-start-panel label {
   display: grid;
   gap: 6px;
   color: #4d5a52;
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.course-form,
+.course-card,
+.course-run-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d9d6ca;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.course-card,
+.course-run-card {
+  border-left: 5px solid #2572b8;
+}
+
+.course-card h2,
+.course-run-card h2 {
+  margin-bottom: 3px;
+  font-size: 1.12rem;
+  line-height: 1.15;
+}
+
+.course-card p,
+.course-run-card p {
+  margin-bottom: 0;
+  color: #5b685f;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.course-hole-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.course-hole-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #ece8dc;
+  border-radius: 8px;
+  background: #fbfaf5;
+}
+
+.course-hole-row > span {
+  padding-bottom: 14px;
+  color: #2d3c34;
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.course-hole-row input {
+  min-height: 42px;
+}
+
+.course-start-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f4f9ff;
+}
+
+.course-player-list,
+.course-run-player-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.player-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 8px;
+}
+
+.compact-delete {
+  width: 48px;
+  min-height: 48px;
+  margin-top: 0;
+  padding: 0;
+}
+
+.course-start-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.course-run-player-summary span {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eef6f1;
+  color: #2d3c34;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.player-switcher {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.player-switcher button {
+  min-height: 42px;
+  border: 1px solid #c7c5bb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #15211b;
+  font-weight: 850;
+}
+
+.player-switcher button.active {
+  border-color: #2572b8;
+  background: #2572b8;
+  color: #ffffff;
+}
+
+.course-throw-card {
+  border-left: 5px solid #2572b8;
+}
+
+.course-throw-count,
+.last-throw {
+  margin: 0;
+  color: #4d5a52;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.last-throw {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fbfaf5;
 }
 
 .disc-card {
@@ -857,6 +1003,20 @@ textarea {
   .disc-form {
     grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) auto;
     align-items: end;
+  }
+
+  .course-form {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
+  }
+
+  .course-form .section-heading,
+  .course-hole-editor,
+  .course-form .primary-action {
+    grid-column: 1 / -1;
+  }
+
+  .course-hole-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .notes-field {

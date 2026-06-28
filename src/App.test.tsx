@@ -3,12 +3,17 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
 import {
+  COURSES_KEY,
+  COURSE_RUNS_KEY,
   DISCS_KEY,
   DRAFT_KEY,
   STORAGE_KEY,
   createBlankSession,
+  createDisc,
   readStoredSessions,
+  saveDiscs,
   saveSessions,
+  type CourseRun,
   type ErrorType,
   type TrainingSession,
 } from './training';
@@ -312,5 +317,79 @@ describe('App', () => {
       releaseIssue: 'griplock',
       score: 1,
     });
+  });
+
+  it('creates a course, starts a multi-player course run, records throws, and saves it locally', async () => {
+    const user = userEvent.setup();
+    const disc = createDisc('Zone', 'putter');
+    saveDiscs([disc]);
+
+    render(<App />);
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Courses' }));
+    await user.type(screen.getByTestId('course-name'), 'Local Park');
+    fireEvent.change(screen.getByTestId('course-hole-count'), { target: { value: '2' } });
+    fireEvent.change(screen.getByTestId('course-hole-1-par'), { target: { value: '3' } });
+    fireEvent.change(screen.getByTestId('course-hole-1-distance'), { target: { value: '85' } });
+    fireEvent.change(screen.getByTestId('course-hole-2-par'), { target: { value: '4' } });
+    fireEvent.change(screen.getByTestId('course-hole-2-distance'), { target: { value: '126' } });
+    await user.click(screen.getByTestId('add-course'));
+
+    expect(JSON.parse(localStorage.getItem(COURSES_KEY) ?? '[]')).toHaveLength(1);
+    expect(screen.getByTestId('course-card')).toHaveTextContent('Local Park');
+    expect(screen.getByTestId('course-card')).toHaveTextContent('2 holes - Par 7 - 211 m');
+
+    await user.click(screen.getByTestId('start-course'));
+    await user.clear(screen.getByTestId('course-player-0'));
+    await user.type(screen.getByTestId('course-player-0'), 'Alex');
+    await user.click(screen.getByTestId('add-player'));
+    await user.clear(screen.getByTestId('course-player-1'));
+    await user.type(screen.getByTestId('course-player-1'), 'Sam');
+    await user.click(screen.getByTestId('start-course-run'));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Local Park' })).toBeInTheDocument();
+    expect(screen.getByTestId('course-run-status')).toHaveAccessibleName('Course run hole 1 of 2');
+    expect(screen.getByTestId('course-run-current-hole')).toHaveTextContent('Hole 1 - Alex');
+
+    await user.selectOptions(screen.getByTestId('course-run-disc'), disc.id);
+    await user.selectOptions(screen.getByTestId('course-run-style'), 'backhand');
+    await user.selectOptions(screen.getByTestId('course-run-angle'), 'hyzer');
+    await user.type(screen.getByTestId('course-run-throw-notes'), 'Safe gap');
+    await user.click(screen.getByTestId('add-course-throw'));
+    await user.type(screen.getByTestId('course-run-hole-notes'), 'Circle putt.');
+
+    expect(screen.getByText(/Throws on this hole:/)).toHaveTextContent('1');
+    expect(screen.getByText(/Last:/)).toHaveTextContent('backhand, hyzer - Safe gap');
+
+    await user.click(screen.getByTestId('course-run-next'));
+
+    expect(screen.getByTestId('course-run-current-hole')).toHaveTextContent('Hole 1 - Sam');
+
+    await user.selectOptions(screen.getByTestId('course-run-style'), 'forehand');
+    await user.selectOptions(screen.getByTestId('course-run-angle'), 'flat');
+    await user.click(screen.getByTestId('add-course-throw'));
+    await user.click(screen.getByTestId('course-run-next'));
+
+    expect(screen.getByTestId('course-run-current-hole')).toHaveTextContent('Hole 2 - Alex');
+
+    await user.click(screen.getByTestId('save-course-run'));
+
+    const savedRuns = JSON.parse(localStorage.getItem(COURSE_RUNS_KEY) ?? '[]') as CourseRun[];
+    expect(savedRuns).toHaveLength(1);
+    expect(savedRuns[0]).toMatchObject({
+      courseName: 'Local Park',
+      status: 'saved',
+      players: [{ name: 'Alex' }, { name: 'Sam' }],
+    });
+    expect(savedRuns[0].holes[0].players[savedRuns[0].players[0].id].throws[0]).toMatchObject({
+      discId: disc.id,
+      style: 'backhand',
+      angle: 'hyzer',
+      notes: 'Safe gap',
+    });
+    expect(savedRuns[0].holes[0].players[savedRuns[0].players[0].id].notes).toBe('Circle putt.');
+    expect(screen.getByTestId('course-run-card')).toHaveTextContent('Local Park');
+    expect(screen.getByTestId('course-run-card')).toHaveTextContent('Alex: 1 throws, 1/2 holes, -2');
+    expect(screen.getByTestId('course-run-card')).toHaveTextContent('Sam: 1 throws, 1/2 holes, -2');
   });
 });
