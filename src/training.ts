@@ -3,6 +3,7 @@ export const DRAFT_KEY = 'disc-golf-training-draft-v1';
 export const DISCS_KEY = 'disc-golf-training-discs-v1';
 export const COURSES_KEY = 'disc-golf-courses-v1';
 export const COURSE_RUNS_KEY = 'disc-golf-course-runs-v1';
+export const DISTANCE_THROWS_KEY = 'disc-golf-distance-throws-v1';
 
 export type SectionId = 'approaches' | 'putting' | 'midranges' | 'forehand';
 export type TrainingType = SectionId | 'full';
@@ -186,6 +187,28 @@ export type CourseRun = {
   notes: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type GpsPoint = {
+  lat: number;
+  lon: number;
+  accuracyMeters?: number;
+  recordedAt: string;
+};
+
+export type DistanceThrow = {
+  id: string;
+  date: string;
+  createdAt: string;
+  distanceMeters: number;
+  start: GpsPoint;
+  end: GpsPoint;
+  discId: string;
+  style: ThrowStyle;
+  angle: ThrowAngle;
+  wind: string;
+  windDirection: string;
+  notes: string;
 };
 
 export type AiHistoryExport = ReturnType<typeof createAiHistoryExport>;
@@ -1145,6 +1168,121 @@ export function readStoredCourseRuns(): CourseRun[] {
   } catch {
     return [];
   }
+}
+
+export function gpsDistanceMeters(start: Pick<GpsPoint, 'lat' | 'lon'>, end: Pick<GpsPoint, 'lat' | 'lon'>) {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const latDelta = toRadians(end.lat - start.lat);
+  const lonDelta = toRadians(end.lon - start.lon);
+  const startLat = toRadians(start.lat);
+  const endLat = toRadians(end.lat);
+  const haversine =
+    Math.sin(latDelta / 2) ** 2 + Math.cos(startLat) * Math.cos(endLat) * Math.sin(lonDelta / 2) ** 2;
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function normalizeGpsPoint(input: Partial<GpsPoint> | undefined): GpsPoint | null {
+  const lat = normalizedOptionalNumber(input?.lat);
+  const lon = normalizedOptionalNumber(input?.lon);
+
+  if (lat === undefined || lon === undefined) {
+    return null;
+  }
+
+  return {
+    lat,
+    lon,
+    ...(normalizedOptionalNumber(input?.accuracyMeters) !== undefined
+      ? { accuracyMeters: normalizedOptionalNumber(input?.accuracyMeters) }
+      : {}),
+    recordedAt: normalizedText(input?.recordedAt) || new Date().toISOString(),
+  };
+}
+
+function normalizeDistanceThrow(input: Partial<DistanceThrow> | undefined): DistanceThrow | null {
+  const start = normalizeGpsPoint(input?.start);
+  const end = normalizeGpsPoint(input?.end);
+  const distanceMeters = normalizedOptionalNumber(input?.distanceMeters);
+
+  if (!start || !end || distanceMeters === undefined) {
+    return null;
+  }
+
+  const createdAt = normalizedText(input?.createdAt) || new Date().toISOString();
+
+  return {
+    id: normalizedText(input?.id) || makeId(),
+    date: normalizedText(input?.date) || todayIsoDate(),
+    createdAt,
+    distanceMeters,
+    start,
+    end,
+    discId: normalizedText(input?.discId),
+    style: throwStyles.includes(input?.style as ThrowStyle) ? (input?.style as ThrowStyle) : '',
+    angle: throwAngles.includes(input?.angle as ThrowAngle) ? (input?.angle as ThrowAngle) : '',
+    wind: normalizedText(input?.wind),
+    windDirection: normalizedText(input?.windDirection),
+    notes: normalizedText(input?.notes),
+  };
+}
+
+export function createDistanceThrow(
+  start: GpsPoint,
+  end: GpsPoint,
+  options: Partial<Pick<DistanceThrow, 'discId' | 'style' | 'angle' | 'wind' | 'windDirection' | 'notes' | 'date'>> = {}
+): DistanceThrow {
+  const now = new Date().toISOString();
+
+  return {
+    id: makeId(),
+    date: options.date || todayIsoDate(),
+    createdAt: now,
+    distanceMeters: gpsDistanceMeters(start, end),
+    start,
+    end,
+    discId: normalizedText(options.discId),
+    style: throwStyles.includes(options.style as ThrowStyle) ? (options.style as ThrowStyle) : '',
+    angle: throwAngles.includes(options.angle as ThrowAngle) ? (options.angle as ThrowAngle) : '',
+    wind: normalizedText(options.wind),
+    windDirection: normalizedText(options.windDirection),
+    notes: normalizedText(options.notes),
+  };
+}
+
+export function readStoredDistanceThrows(): DistanceThrow[] {
+  try {
+    const raw = localStorage.getItem(DISTANCE_THROWS_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as DistanceThrow[];
+    return Array.isArray(parsed) ? parsed.flatMap((result) => normalizeDistanceThrow(result) ?? []) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDistanceThrows(distanceThrowsToSave: DistanceThrow[]) {
+  localStorage.setItem(DISTANCE_THROWS_KEY, JSON.stringify(distanceThrowsToSave));
+}
+
+export function bestDistanceThrow(distanceThrows: DistanceThrow[]) {
+  return distanceThrows.length > 0
+    ? [...distanceThrows].sort((a, b) => b.distanceMeters - a.distanceMeters)[0]
+    : null;
+}
+
+export function averageDistanceThrows(distanceThrows: DistanceThrow[], limit = 5) {
+  const recentThrows = distanceThrows.slice(0, limit);
+
+  if (recentThrows.length === 0) {
+    return null;
+  }
+
+  return recentThrows.reduce((sum, result) => sum + result.distanceMeters, 0) / recentThrows.length;
 }
 
 export function courseRunCurrentHole(run: CourseRun) {

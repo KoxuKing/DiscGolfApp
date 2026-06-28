@@ -11,6 +11,7 @@ import {
   History,
   Home,
   Map,
+  MapPin,
   PlusCircle,
   RotateCcw,
   Save,
@@ -49,6 +50,8 @@ import {
   clampHoleCount,
   clampPlannedThrows,
   completedThrows,
+  averageDistanceThrows,
+  bestDistanceThrow,
   courseRunCurrentHole,
   courseRunCurrentPlayer,
   courseRunPlayerHole,
@@ -60,6 +63,7 @@ import {
   createCourseHoles,
   createCourseRun,
   createCourseRunThrow,
+  createDistanceThrow,
   currentThrow,
   currentThrowIndex,
   currentThrowNumber,
@@ -72,12 +76,14 @@ import {
   puttResultsForScore,
   readStoredCourses,
   readStoredCourseRuns,
+  readStoredDistanceThrows,
   readDraft,
   readStoredDiscs,
   readStoredSessions,
   releaseIssues,
   saveCourses,
   saveCourseRuns,
+  saveDistanceThrows,
   saveDiscs,
   saveDraft,
   saveSessions,
@@ -106,6 +112,7 @@ import {
   type CourseHole,
   type CourseRun,
   type CourseRunThrow,
+  type DistanceThrow,
   type Disc,
   type DiscCategory,
   type ErrorType,
@@ -114,9 +121,10 @@ import {
   type ThrowResult,
   type ThrowStyle,
   type TrainingSession,
+  type GpsPoint,
 } from './training';
 
-type View = 'home' | 'new' | 'track' | 'history' | 'discs' | 'courses' | 'course-run';
+type View = 'home' | 'new' | 'track' | 'history' | 'discs' | 'courses' | 'course-run' | 'distance';
 
 type SessionSetup = {
   trainingType: SectionId;
@@ -196,6 +204,27 @@ function getCurrentCoordinates() {
   });
 }
 
+function getCurrentGpsPoint() {
+  return new Promise<GpsPoint>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation unavailable'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) =>
+        resolve({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          accuracyMeters: position.coords.accuracy,
+          recordedAt: new Date(position.timestamp).toISOString(),
+        }),
+      (error) => reject(error),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+}
+
 function discSelectLabel(disc: Disc) {
   const flight =
     disc.speed !== undefined && disc.glide !== undefined && disc.turn !== undefined && disc.fade !== undefined
@@ -212,6 +241,7 @@ function App() {
   const [discs, setDiscs] = useState<Disc[]>(() => readStoredDiscs());
   const [courses, setCourses] = useState<Course[]>(() => readStoredCourses());
   const [courseRuns, setCourseRuns] = useState<CourseRun[]>(() => readStoredCourseRuns());
+  const [distanceThrows, setDistanceThrows] = useState<DistanceThrow[]>(() => readStoredDistanceThrows());
   const [activeCourseRun, setActiveCourseRun] = useState<CourseRun | null>(null);
   const [activeView, setActiveView] = useState<View>(() => (initialDraft ? 'track' : 'home'));
   const [setup, setSetup] = useState<SessionSetup>(() => createSessionSetup());
@@ -519,8 +549,26 @@ function App() {
     saveCourseRuns(nextRuns);
   }
 
+  function saveMeasuredDistanceThrow(distanceThrow: DistanceThrow) {
+    const nextThrows = [distanceThrow, ...distanceThrows];
+
+    setDistanceThrows(nextThrows);
+    saveDistanceThrows(nextThrows);
+  }
+
+  function deleteDistanceThrow(distanceThrowId: string) {
+    const nextThrows = distanceThrows.filter((distanceThrow) => distanceThrow.id !== distanceThrowId);
+
+    setDistanceThrows(nextThrows);
+    saveDistanceThrows(nextThrows);
+  }
+
   return (
-    <main className={`app-shell ${activeView === 'track' || activeView === 'course-run' ? 'tracking-shell' : ''}`}>
+    <main
+      className={`app-shell ${
+        activeView === 'track' || activeView === 'course-run' || activeView === 'distance' ? 'tracking-shell' : ''
+      }`}
+    >
       <header className="topbar">
         <div>
           <p className="eyebrow">Disc golf</p>
@@ -607,6 +655,10 @@ function App() {
           <Map size={18} />
           Courses
         </button>
+        <button className={activeView === 'distance' ? 'active' : ''} onClick={() => setActiveView('distance')}>
+          <MapPin size={18} />
+          Distance
+        </button>
         <button className={activeView === 'discs' ? 'active' : ''} onClick={() => setActiveView('discs')}>
           <Disc3 size={18} />
           Discs
@@ -626,6 +678,7 @@ function App() {
           onContinue={() => setActiveView('track')}
           onHistory={() => setActiveView('history')}
           onCourses={() => setActiveView('courses')}
+          onDistance={() => setActiveView('distance')}
           onDiscs={() => setActiveView('discs')}
         />
       )}
@@ -659,6 +712,7 @@ function App() {
           onNew={() => setActiveView('new')}
           onHistory={() => setActiveView('history')}
           onCourses={() => setActiveView('courses')}
+          onDistance={() => setActiveView('distance')}
           onDiscs={() => setActiveView('discs')}
         />
       )}
@@ -695,6 +749,14 @@ function App() {
           onDeleteRun={deleteCourseRun}
         />
       )}
+      {activeView === 'distance' && (
+        <DistanceMeasureView
+          discs={discs}
+          distanceThrows={distanceThrows}
+          onSave={saveMeasuredDistanceThrow}
+          onDelete={deleteDistanceThrow}
+        />
+      )}
       {activeView === 'discs' && <DiscsView discs={discs} onAdd={addDisc} onDelete={deleteDisc} />}
     </main>
   );
@@ -706,10 +768,11 @@ type HomeViewProps = {
   onContinue?: () => void;
   onHistory: () => void;
   onCourses: () => void;
+  onDistance: () => void;
   onDiscs: () => void;
 };
 
-function HomeView({ hasDraft, onNew, onContinue, onHistory, onCourses, onDiscs }: HomeViewProps) {
+function HomeView({ hasDraft, onNew, onContinue, onHistory, onCourses, onDistance, onDiscs }: HomeViewProps) {
   return (
     <section className="main-menu" aria-label="Main menu">
       <button className="primary-action menu-action" type="button" onClick={onNew} data-testid="new-session">
@@ -729,6 +792,10 @@ function HomeView({ hasDraft, onNew, onContinue, onHistory, onCourses, onDiscs }
       <button className="secondary-action menu-action" type="button" onClick={onCourses}>
         <Map size={20} />
         Courses
+      </button>
+      <button className="secondary-action menu-action" type="button" onClick={onDistance}>
+        <MapPin size={20} />
+        Distance
       </button>
       <button className="secondary-action menu-action" type="button" onClick={onDiscs}>
         <Disc3 size={20} />
@@ -1906,6 +1973,271 @@ function CourseRunView({
         </button>
       </div>
     </>
+  );
+}
+
+type DistanceMeasureViewProps = {
+  discs: Disc[];
+  distanceThrows: DistanceThrow[];
+  onSave: (distanceThrow: DistanceThrow) => void;
+  onDelete: (distanceThrowId: string) => void;
+};
+
+function DistanceMeasureView({ discs, distanceThrows, onSave, onDelete }: DistanceMeasureViewProps) {
+  const [startPoint, setStartPoint] = useState<GpsPoint | null>(null);
+  const [endPoint, setEndPoint] = useState<GpsPoint | null>(null);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [discId, setDiscId] = useState('');
+  const [style, setStyle] = useState<ThrowStyle>('backhand');
+  const [angle, setAngle] = useState<ThrowAngle>('flat');
+  const [wind, setWind] = useState('');
+  const [windDirection, setWindDirection] = useState('');
+  const [notes, setNotes] = useState('');
+  const measuredDistance = startPoint && endPoint ? createDistanceThrow(startPoint, endPoint).distanceMeters : null;
+  const bestThrow = bestDistanceThrow(distanceThrows);
+  const averageRecent = averageDistanceThrows(distanceThrows);
+
+  async function captureStart() {
+    setLoading(true);
+    setError('');
+    setStatus('Getting tee position...');
+
+    try {
+      const point = await getCurrentGpsPoint();
+      setStartPoint(point);
+      setEndPoint(null);
+      setStatus('Start saved. Walk to your disc and press End.');
+    } catch {
+      setError('Could not get GPS location. Allow location permission and try outdoors.');
+      setStatus('');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function captureEnd() {
+    if (!startPoint) {
+      setError('Press Start first at the tee.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setStatus('Getting disc position...');
+
+    try {
+      const point = await getCurrentGpsPoint();
+      setEndPoint(point);
+      setStatus('End saved. Review and save the throw.');
+    } catch {
+      setError('Could not get GPS location. Try again near the disc.');
+      setStatus('');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function saveThrow() {
+    if (!startPoint || !endPoint) {
+      return;
+    }
+
+    onSave(createDistanceThrow(startPoint, endPoint, { discId, style, angle, wind, windDirection, notes }));
+    setStartPoint(null);
+    setEndPoint(null);
+    setNotes('');
+    setStatus('Distance throw saved.');
+  }
+
+  return (
+    <>
+      <section className="distance-panel" aria-label="GPS distance measurement">
+        <div className="track-status">
+          <div>
+            <span>Current</span>
+            <strong data-testid="measured-distance">
+              {measuredDistance === null ? '-' : `${Math.round(measuredDistance)} m`}
+            </strong>
+          </div>
+          <div>
+            <span>Best</span>
+            <strong>{bestThrow ? `${Math.round(bestThrow.distanceMeters)} m` : '-'}</strong>
+          </div>
+          <div>
+            <span>Avg 5</span>
+            <strong>{averageRecent === null ? '-' : `${Math.round(averageRecent)} m`}</strong>
+          </div>
+        </div>
+
+        <article className="current-throw-card distance-measure-card">
+          <h2>Measure throw</h2>
+          <div className="distance-actions">
+            <button className="primary-action" type="button" onClick={captureStart} disabled={loading} data-testid="gps-start">
+              <MapPin size={18} />
+              Start
+            </button>
+            <button
+              className="primary-action"
+              type="button"
+              onClick={captureEnd}
+              disabled={loading || !startPoint}
+              data-testid="gps-end"
+            >
+              <Flag size={18} />
+              End
+            </button>
+          </div>
+
+          {status && (
+            <p className="import-status" role="status">
+              {status}
+            </p>
+          )}
+          {error && (
+            <p className="import-error" role="alert">
+              {error}
+            </p>
+          )}
+
+          <div className="gps-point-grid">
+            <GpsPointSummary label="Start" point={startPoint} />
+            <GpsPointSummary label="End" point={endPoint} />
+          </div>
+
+          <div className="current-detail-grid">
+            <label className="detail-field wide-field">
+              Disc
+              <select value={discId} onChange={(event) => setDiscId(event.target.value)} data-testid="distance-disc">
+                <option value="">No disc</option>
+                {discs.map((disc) => (
+                  <option key={disc.id} value={disc.id}>
+                    {discSelectLabel(disc)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="detail-field">
+              Style
+              <select
+                value={style}
+                onChange={(event) => setStyle(event.target.value as ThrowStyle)}
+                data-testid="distance-style"
+              >
+                {throwStyles.map((throwStyle) => (
+                  <option key={throwStyle || 'none'} value={throwStyle}>
+                    {throwStyle || 'No style'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="detail-field">
+              Angle
+              <select
+                value={angle}
+                onChange={(event) => setAngle(event.target.value as ThrowAngle)}
+                data-testid="distance-angle"
+              >
+                {throwAngles.map((throwAngle) => (
+                  <option key={throwAngle || 'none'} value={throwAngle}>
+                    {throwAngle || 'No angle'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <section className="session-meta distance-meta" aria-label="Distance throw conditions">
+            <label>
+              Wind direction
+              <select value={windDirection} onChange={(event) => setWindDirection(event.target.value)}>
+                {windDirections.map((direction) => (
+                  <option key={direction || 'none'} value={direction}>
+                    {direction || 'No direction'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Wind
+              <select value={wind} onChange={(event) => setWind(event.target.value)}>
+                {windStrengths.map((windStrength) => (
+                  <option key={windStrength || 'none'} value={windStrength}>
+                    {windStrength || 'No wind set'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <label className="detail-field compact-notes">
+            Notes
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={2}
+              data-testid="distance-notes"
+              placeholder="Line, run-up, field, wind..."
+            />
+          </label>
+
+          <button className="primary-action" type="button" onClick={saveThrow} disabled={!startPoint || !endPoint} data-testid="save-distance-throw">
+            <Save size={18} />
+            Save throw
+          </button>
+        </article>
+
+        {distanceThrows.length > 0 && (
+          <section className="distance-history" aria-label="Measured throws">
+            <div className="section-heading compact-heading">
+              <h2>Measured throws</h2>
+            </div>
+            {distanceThrows.slice(0, 10).map((distanceThrow) => {
+              const disc = discs.find((savedDisc) => savedDisc.id === distanceThrow.discId);
+
+              return (
+                <article className="distance-card" key={distanceThrow.id} data-testid="distance-card">
+                  <div>
+                    <h3>{Math.round(distanceThrow.distanceMeters)} m</h3>
+                    <p>
+                      {distanceThrow.date}
+                      {disc ? ` - ${disc.name}` : ''}
+                      {distanceThrow.style ? ` - ${distanceThrow.style}` : ''}
+                      {distanceThrow.angle ? ` - ${distanceThrow.angle}` : ''}
+                    </p>
+                    {distanceThrow.notes && <span>{distanceThrow.notes}</span>}
+                  </div>
+                  <button
+                    className="delete-action compact-delete"
+                    type="button"
+                    onClick={() => onDelete(distanceThrow.id)}
+                    title="Delete measured throw"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </article>
+              );
+            })}
+          </section>
+        )}
+      </section>
+    </>
+  );
+}
+
+type GpsPointSummaryProps = {
+  label: string;
+  point: GpsPoint | null;
+};
+
+function GpsPointSummary({ label, point }: GpsPointSummaryProps) {
+  return (
+    <div className="gps-point">
+      <span>{label}</span>
+      <strong>{point ? 'Saved' : '-'}</strong>
+      <small>{point?.accuracyMeters !== undefined ? `Accuracy ${Math.round(point.accuracyMeters)} m` : 'GPS accuracy'}</small>
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import {
   COURSES_KEY,
   COURSE_RUNS_KEY,
   DISCS_KEY,
+  DISTANCE_THROWS_KEY,
   DRAFT_KEY,
   STORAGE_KEY,
   createBlankSession,
@@ -242,6 +243,83 @@ describe('App', () => {
       ).toBeInTheDocument();
     } finally {
       Object.defineProperty(globalThis, 'fetch', { configurable: true, value: originalFetch });
+    }
+  });
+
+  it('measures a max distance throw with GPS and saves it locally', async () => {
+    const user = userEvent.setup();
+    const originalGeolocation = Object.getOwnPropertyDescriptor(navigator, 'geolocation');
+    const positions = [
+      {
+        coords: {
+          latitude: 0,
+          longitude: 0,
+          accuracy: 4,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          speed: null,
+        },
+        timestamp: Date.parse('2026-06-28T12:00:00.000Z'),
+      },
+      {
+        coords: {
+          latitude: 0,
+          longitude: 0.001,
+          accuracy: 5,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          speed: null,
+        },
+        timestamp: Date.parse('2026-06-28T12:01:00.000Z'),
+      },
+    ] as GeolocationPosition[];
+    let positionIndex = 0;
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success(positions[Math.min(positionIndex, positions.length - 1)]);
+      positionIndex += 1;
+    });
+
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition } });
+
+    try {
+      render(<App />);
+
+      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Distance' }));
+      await user.click(screen.getByTestId('gps-start'));
+
+      expect(await screen.findByRole('status')).toHaveTextContent('Start saved');
+      expect(screen.getByText('Accuracy 4 m')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('gps-end'));
+
+      expect(await screen.findByRole('status')).toHaveTextContent('End saved');
+      expect(screen.getByTestId('measured-distance')).toHaveTextContent('111 m');
+      expect(screen.getByText('Accuracy 5 m')).toBeInTheDocument();
+
+      await user.selectOptions(screen.getByTestId('distance-style'), 'forehand');
+      await user.selectOptions(screen.getByTestId('distance-angle'), 'hyzer');
+      await user.type(screen.getByTestId('distance-notes'), 'Max distance field.');
+      await user.click(screen.getByTestId('save-distance-throw'));
+
+      const savedThrows = JSON.parse(localStorage.getItem(DISTANCE_THROWS_KEY) ?? '[]');
+      expect(savedThrows).toHaveLength(1);
+      expect(savedThrows[0]).toMatchObject({
+        style: 'forehand',
+        angle: 'hyzer',
+        notes: 'Max distance field.',
+        start: { lat: 0, lon: 0, accuracyMeters: 4 },
+        end: { lat: 0, lon: 0.001, accuracyMeters: 5 },
+      });
+      expect(savedThrows[0].distanceMeters).toBeCloseTo(111.2, 1);
+      expect(screen.getByTestId('distance-card')).toHaveTextContent('111 m');
+      expect(screen.getByTestId('distance-card')).toHaveTextContent('forehand');
+      expect(screen.getByTestId('distance-card')).toHaveTextContent('hyzer');
+    } finally {
+      if (originalGeolocation) {
+        Object.defineProperty(navigator, 'geolocation', originalGeolocation);
+      }
     }
   });
 

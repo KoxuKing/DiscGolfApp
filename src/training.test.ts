@@ -3,10 +3,13 @@ import {
   COURSES_KEY,
   COURSE_RUNS_KEY,
   DISCS_KEY,
+  DISTANCE_THROWS_KEY,
   DRAFT_KEY,
   STORAGE_KEY,
   accuracyLabel,
+  averageDistanceThrows,
   averageDistanceLabel,
+  bestDistanceThrow,
   calculateProgressStats,
   completedThrows,
   createAiHistoryExport,
@@ -16,16 +19,20 @@ import {
   createCourseHoles,
   createCourseRun,
   createCourseRunThrow,
+  createDistanceThrow,
   createDisc,
   courseRunPlayerSummary,
   courseRunScoreToPar,
+  gpsDistanceMeters,
   readDraft,
   readStoredCourseRuns,
   readStoredCourses,
+  readStoredDistanceThrows,
   readStoredDiscs,
   readStoredSessions,
   saveCourseRuns,
   saveCourses,
+  saveDistanceThrows,
   saveDiscs,
   saveDraft,
   saveSessions,
@@ -304,6 +311,60 @@ describe('training model', () => {
 
     expect(readStoredCourses()).toEqual([]);
     expect(readStoredCourseRuns()).toEqual([]);
+  });
+
+  it('measures and stores GPS distance throws locally', () => {
+    const start = {
+      lat: 0,
+      lon: 0,
+      accuracyMeters: 4,
+      recordedAt: '2026-06-28T12:00:00.000Z',
+    };
+    const end = {
+      lat: 0,
+      lon: 0.001,
+      accuracyMeters: 5,
+      recordedAt: '2026-06-28T12:01:00.000Z',
+    };
+    const distanceThrow = createDistanceThrow(start, end, {
+      date: '2026-06-28',
+      discId: 'disc-id',
+      style: 'backhand',
+      angle: 'hyzer',
+      wind: 'Light',
+      windDirection: 'Tailwind',
+      notes: 'Flat field',
+    });
+
+    expect(gpsDistanceMeters(start, end)).toBeCloseTo(111.2, 1);
+    expect(distanceThrow.distanceMeters).toBeCloseTo(111.2, 1);
+
+    const shorterThrow = {
+      ...distanceThrow,
+      id: 'shorter',
+      distanceMeters: 80,
+      createdAt: '2026-06-28T12:02:00.000Z',
+    };
+
+    saveDistanceThrows([distanceThrow, shorterThrow]);
+
+    expect(JSON.parse(localStorage.getItem(DISTANCE_THROWS_KEY) ?? '[]')).toHaveLength(2);
+    expect(readStoredDistanceThrows()[0]).toMatchObject({
+      date: '2026-06-28',
+      discId: 'disc-id',
+      style: 'backhand',
+      angle: 'hyzer',
+      wind: 'Light',
+      windDirection: 'Tailwind',
+      notes: 'Flat field',
+      start,
+      end,
+    });
+    expect(bestDistanceThrow(readStoredDistanceThrows())?.id).toBe(distanceThrow.id);
+    expect(averageDistanceThrows(readStoredDistanceThrows())).toBeCloseTo((distanceThrow.distanceMeters + 80) / 2, 1);
+
+    localStorage.setItem(DISTANCE_THROWS_KEY, 'not json');
+    expect(readStoredDistanceThrows()).toEqual([]);
   });
 
   it('summarizes the most common tracked parameter in one session', () => {

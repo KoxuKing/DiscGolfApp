@@ -190,6 +190,12 @@ h1 {
   gap: 10px;
 }
 
+.distance-panel,
+.distance-history {
+  display: grid;
+  gap: 12px;
+}
+
 .track-status {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -943,6 +949,74 @@ textarea {
   padding: 8px 10px;
   border-radius: 8px;
   background: #fbfaf5;
+}
+
+.distance-measure-card {
+  border-left: 5px solid #1d7a4f;
+}
+
+.distance-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gps-point-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gps-point {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid #ece8dc;
+  border-radius: 8px;
+  background: #fbfaf5;
+}
+
+.gps-point span,
+.gps-point small {
+  color: #5b685f;
+  font-size: 0.76rem;
+  font-weight: 820;
+}
+
+.gps-point strong {
+  color: #15211b;
+  font-size: 1rem;
+}
+
+.distance-meta {
+  margin-bottom: 0;
+}
+
+.distance-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #d9d6ca;
+  border-left: 5px solid #1d7a4f;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.distance-card h3 {
+  margin: 0 0 3px;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.distance-card p,
+.distance-card span {
+  display: block;
+  margin: 0;
+  color: #5b685f;
+  font-size: 0.88rem;
+  font-weight: 780;
 }
 
 .disc-card {
