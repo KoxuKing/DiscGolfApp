@@ -338,6 +338,15 @@ describe('App', () => {
                 primary_layout: { holes: 9, length_meters: 900 },
               },
               {
+                id: 'third',
+                slug: 'third-course',
+                name: 'Third Course',
+                lat: 62,
+                lon: 24,
+                locality: 'Hameenkyro',
+                primary_layout: { holes: 18, length_meters: 1800 },
+              },
+              {
                 id: 'near',
                 slug: 'near-course',
                 name: 'Near Course',
@@ -345,6 +354,15 @@ describe('App', () => {
                 lon: 23.77,
                 locality: 'Tampere',
                 primary_layout: { holes: 3, length_meters: 300 },
+              },
+              {
+                id: 'second',
+                slug: 'second-course',
+                name: 'Second Course',
+                lat: 61.6,
+                lon: 23.8,
+                locality: 'Ylojarvi',
+                primary_layout: { holes: 9, length_meters: 900 },
               },
             ],
           }),
@@ -377,9 +395,13 @@ describe('App', () => {
       await user.click(screen.getByTestId('find-nearby-courses'));
 
       const importCards = await screen.findAllByTestId('import-course-card');
+      expect(importCards).toHaveLength(3);
       expect(importCards[0]).toHaveTextContent('Near Course');
       expect(importCards[0]).toHaveTextContent('Tampere');
       expect(importCards[0]).toHaveTextContent('3 holes');
+      expect(importCards[1]).toHaveTextContent('Second Course');
+      expect(importCards[2]).toHaveTextContent('Third Course');
+      expect(screen.queryByText('Far Course')).not.toBeInTheDocument();
 
       await user.click(screen.getByTestId('import-course-near'));
 

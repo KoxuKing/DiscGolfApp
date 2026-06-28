@@ -1309,7 +1309,7 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
 
       return `${course.name} ${course.locality}`.toLowerCase().includes(search);
     })
-    .slice(0, 30);
+    .slice(0, 3);
 
   function beginStart(courseId: string) {
     setStartSetup({ courseId, date: todayIsoDate(), players: ['Player 1'] });
