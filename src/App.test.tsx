@@ -106,15 +106,17 @@ describe('App', () => {
 
     const card = screen.getByTestId('history-card');
     expect(within(card).getByRole('heading', { name: 'Putting' })).toBeInTheDocument();
-    expect(card).toHaveTextContent('2026-06-28 - 8 m - 3 throws - Headwind - Medium wind - Fatigue 5 - 1/3 throws');
+    expect(card).toHaveTextContent('2026-06-28 - 8 m - 1 throw - Headwind - Medium wind - Fatigue 5 - 1/1 throws');
     expect(card).toHaveTextContent('Work on nose angle.');
-    expect(screen.getByTestId('stat-last')).toHaveTextContent('1/3');
-    expect(screen.getByTestId('stat-best')).toHaveTextContent('1/3');
-    expect(screen.getByTestId('stat-average')).toHaveTextContent('33%');
+    expect(screen.getByTestId('stat-last')).toHaveTextContent('1/1');
+    expect(screen.getByTestId('stat-best')).toHaveTextContent('1/1');
+    expect(screen.getByTestId('stat-average')).toHaveTextContent('100%');
     expect(screen.getByTestId('stat-error')).toHaveTextContent('left (1)');
 
     const savedSessions = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as TrainingSession[];
     expect(savedSessions).toHaveLength(1);
+    expect(savedSessions[0].plannedThrows).toBe(1);
+    expect(savedSessions[0].sessionThrows).toHaveLength(1);
     expect(savedSessions[0].sessionThrows[0]).toMatchObject({
       completed: true,
       puttResult: 'chains left',

@@ -23,6 +23,7 @@ import {
   createDisc,
   courseRunPlayerSummary,
   courseRunScoreToPar,
+  finalizeSessionForSave,
   gpsDistanceMeters,
   readDraft,
   readStoredCourseRuns,
@@ -122,6 +123,19 @@ describe('training model', () => {
     expect(sessionMaxScore(session)).toBe(8);
     expect(accuracyLabel(session)).toBe('0%');
     expect(averageDistanceLabel(session)).toBe('7 m');
+  });
+
+  it('finalizes early saved sessions to completed throws', () => {
+    const session = createBlankSession('putting', { plannedThrows: 5 });
+    session.sessionThrows[0] = { ...session.sessionThrows[0], completed: true, score: 1 };
+    session.sessionThrows[1] = { ...session.sessionThrows[1], completed: true, score: 0 };
+
+    const finalized = finalizeSessionForSave(session);
+
+    expect(finalized.plannedThrows).toBe(2);
+    expect(finalized.sessionThrows).toHaveLength(2);
+    expect(sessionMaxScore(finalized)).toBe(2);
+    expect(sessionScore(finalized)).toBe(1);
   });
 
   it('calculates progress stats across custom session types', () => {

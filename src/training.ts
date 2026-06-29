@@ -597,6 +597,21 @@ export function completedThrows(session: TrainingSession) {
   return completedSessionThrows(session).length;
 }
 
+export function finalizeSessionForSave(session: TrainingSession): TrainingSession {
+  const completed = completedSessionThrows(session);
+
+  if (completed.length === 0 || completed.length >= session.plannedThrows) {
+    return session;
+  }
+
+  return {
+    ...session,
+    plannedThrows: completed.length,
+    currentThrowIndex: completed.length - 1,
+    sessionThrows: completed,
+  };
+}
+
 export function isSessionComplete(session: TrainingSession) {
   return completedThrows(session) >= session.plannedThrows;
 }
@@ -717,7 +732,7 @@ export function sectionScore(session: TrainingSession, section: SectionConfig) {
 export function sessionConditionParts(session: TrainingSession) {
   return [
     session.distanceMeters ? `${session.distanceMeters} m` : '',
-    `${session.plannedThrows} throws`,
+    `${session.plannedThrows} throw${session.plannedThrows === 1 ? '' : 's'}`,
     session.windDirection,
     session.wind ? `${session.wind} wind` : '',
     `Fatigue ${session.fatigue}`,

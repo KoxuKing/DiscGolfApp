@@ -71,6 +71,7 @@ import {
   defaultDistanceForType,
   discCategories,
   errorTypes,
+  finalizeSessionForSave,
   isSessionComplete,
   makeId,
   puttResultsForScore,
@@ -422,7 +423,7 @@ function App() {
     }
 
     const sessionToSave = {
-      ...draft,
+      ...finalizeSessionForSave(draft),
       id: makeId(),
       createdAt: new Date().toISOString(),
     };
