@@ -126,6 +126,10 @@ import {
 
 type View = 'home' | 'new' | 'track' | 'history' | 'discs' | 'courses' | 'course-run' | 'distance';
 
+function isTrainingView(view: View) {
+  return view === 'home' || view === 'new' || view === 'track' || view === 'history' || view === 'distance';
+}
+
 type SessionSetup = {
   trainingType: SectionId;
   distanceMeters: string;
@@ -633,31 +637,13 @@ function App() {
       )}
 
       <nav className="view-tabs" aria-label="Views">
-        <button className={activeView === 'home' ? 'active' : ''} onClick={() => setActiveView('home')}>
-          <Home size={18} />
-          Menu
-        </button>
-        {draft && (
-          <button className={activeView === 'track' ? 'active' : ''} onClick={() => setActiveView('track')}>
-            <ClipboardList size={18} />
-            Session
-          </button>
-        )}
-        <button className={activeView === 'new' ? 'active' : ''} onClick={() => setActiveView('new')}>
-          <PlusCircle size={18} />
-          New
-        </button>
-        <button className={activeView === 'history' ? 'active' : ''} onClick={() => setActiveView('history')}>
-          <History size={18} />
-          History
+        <button className={isTrainingView(activeView) ? 'active' : ''} onClick={() => setActiveView('home')}>
+          <Activity size={18} />
+          Training
         </button>
         <button className={activeView === 'courses' ? 'active' : ''} onClick={() => setActiveView('courses')}>
           <Map size={18} />
           Courses
-        </button>
-        <button className={activeView === 'distance' ? 'active' : ''} onClick={() => setActiveView('distance')}>
-          <MapPin size={18} />
-          Distance
         </button>
         <button className={activeView === 'discs' ? 'active' : ''} onClick={() => setActiveView('discs')}>
           <Disc3 size={18} />
@@ -677,9 +663,7 @@ function App() {
           onNew={() => setActiveView('new')}
           onContinue={() => setActiveView('track')}
           onHistory={() => setActiveView('history')}
-          onCourses={() => setActiveView('courses')}
           onDistance={() => setActiveView('distance')}
-          onDiscs={() => setActiveView('discs')}
         />
       )}
 
@@ -711,9 +695,7 @@ function App() {
           hasDraft={false}
           onNew={() => setActiveView('new')}
           onHistory={() => setActiveView('history')}
-          onCourses={() => setActiveView('courses')}
           onDistance={() => setActiveView('distance')}
-          onDiscs={() => setActiveView('discs')}
         />
       )}
 
@@ -767,14 +749,12 @@ type HomeViewProps = {
   onNew: () => void;
   onContinue?: () => void;
   onHistory: () => void;
-  onCourses: () => void;
   onDistance: () => void;
-  onDiscs: () => void;
 };
 
-function HomeView({ hasDraft, onNew, onContinue, onHistory, onCourses, onDistance, onDiscs }: HomeViewProps) {
+function HomeView({ hasDraft, onNew, onContinue, onHistory, onDistance }: HomeViewProps) {
   return (
-    <section className="main-menu" aria-label="Main menu">
+    <section className="main-menu" aria-label="Training">
       <button className="primary-action menu-action" type="button" onClick={onNew} data-testid="new-session">
         <PlusCircle size={20} />
         New session
@@ -785,21 +765,13 @@ function HomeView({ hasDraft, onNew, onContinue, onHistory, onCourses, onDistanc
           Continue session
         </button>
       )}
+      <button className="secondary-action menu-action" type="button" onClick={onDistance} data-testid="max-distance">
+        <MapPin size={20} />
+        Max distance
+      </button>
       <button className="secondary-action menu-action" type="button" onClick={onHistory}>
         <History size={20} />
         History
-      </button>
-      <button className="secondary-action menu-action" type="button" onClick={onCourses}>
-        <Map size={20} />
-        Courses
-      </button>
-      <button className="secondary-action menu-action" type="button" onClick={onDistance}>
-        <MapPin size={20} />
-        Distance
-      </button>
-      <button className="secondary-action menu-action" type="button" onClick={onDiscs}>
-        <Disc3 size={20} />
-        Discs
       </button>
 
       <div className="training-type-grid">

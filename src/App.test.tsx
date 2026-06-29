@@ -35,13 +35,31 @@ function setAppliedThrow(session: TrainingSession, score: number, error: ErrorTy
   };
 }
 
+function viewNav() {
+  return within(screen.getByRole('navigation', { name: 'Views' }));
+}
+
+async function openTraining(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(viewNav().getByRole('button', { name: 'Training' }));
+}
+
+async function openNewSession(user: ReturnType<typeof userEvent.setup>) {
+  await openTraining(user);
+  await user.click(screen.getByTestId('new-session'));
+}
+
 describe('App', () => {
   it('starts on the main menu with a new session action', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'Training tracker' })).toBeInTheDocument();
     expect(screen.getByTestId('session-count')).toHaveAccessibleName('Saved sessions 0');
+    expect(viewNav().getByRole('button', { name: 'Training' })).toBeInTheDocument();
+    expect(viewNav().queryByRole('button', { name: 'New' })).not.toBeInTheDocument();
+    expect(viewNav().queryByRole('button', { name: 'History' })).not.toBeInTheDocument();
+    expect(viewNav().queryByRole('button', { name: 'Distance' })).not.toBeInTheDocument();
     expect(screen.getByTestId('new-session')).toBeInTheDocument();
+    expect(screen.getByTestId('max-distance')).toBeInTheDocument();
     expect(screen.getByText('Putter approaches')).toBeInTheDocument();
     expect(screen.getByText('Putting')).toBeInTheDocument();
     expect(screen.queryByTestId('current-throw-card')).not.toBeInTheDocument();
@@ -131,7 +149,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Discs' }));
+    await user.click(viewNav().getByRole('button', { name: 'Discs' }));
     await user.type(screen.getByTestId('disc-name'), 'Pure');
     await user.selectOptions(screen.getByTestId('disc-category'), 'mid-range');
     await user.click(screen.getByTestId('add-disc'));
@@ -142,7 +160,7 @@ describe('App', () => {
     const savedDiscs = JSON.parse(localStorage.getItem(DISCS_KEY) ?? '[]') as Array<{ id: string }>;
     expect(savedDiscs).toHaveLength(1);
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'New' }));
+    await openNewSession(user);
     fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '2' } });
     await user.click(screen.getByTestId('start-session'));
 
@@ -163,7 +181,7 @@ describe('App', () => {
     expect(draft.sessionThrows[1].discId).toBe(discOption.value);
 
     await user.click(screen.getByTestId('save-session'));
-    await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'New' }));
+    await openNewSession(user);
     fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '1' } });
     await user.click(screen.getByTestId('start-session'));
 
@@ -203,7 +221,7 @@ describe('App', () => {
     try {
       render(<App />);
 
-      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Discs' }));
+      await user.click(viewNav().getByRole('button', { name: 'Discs' }));
       await user.type(screen.getByTestId('disc-search'), 'zone');
       await user.click(screen.getByTestId('search-disc-api'));
 
@@ -232,7 +250,7 @@ describe('App', () => {
       expect(screen.getByTestId('import-disc-zone-id')).toBeDisabled();
       expect(screen.getByTestId('disc-card')).toHaveTextContent('Discraft Zone');
 
-      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'New' }));
+      await openNewSession(user);
       fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '1' } });
       await user.click(screen.getByTestId('start-session'));
 
@@ -286,7 +304,8 @@ describe('App', () => {
     try {
       render(<App />);
 
-      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Distance' }));
+      await openTraining(user);
+      await user.click(screen.getByTestId('max-distance'));
       await user.click(screen.getByTestId('gps-start'));
 
       expect(await screen.findByRole('status')).toHaveTextContent('Start saved');
@@ -339,7 +358,8 @@ describe('App', () => {
     expect(screen.getByTestId('stat-average')).toHaveTextContent('Avg dist');
     expect(screen.getByTestId('stat-average')).toHaveTextContent('5 m');
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'History' }));
+    await openTraining(user);
+    await user.click(screen.getByRole('button', { name: 'History' }));
 
     const card = screen.getByTestId('history-card');
     expect(card).toHaveTextContent('Forehand');
@@ -376,7 +396,8 @@ describe('App', () => {
     try {
       render(<App />);
 
-      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'History' }));
+      await openTraining(user);
+      await user.click(screen.getByRole('button', { name: 'History' }));
       await user.click(screen.getByTestId('copy-ai-export'));
 
       expect(writeText).toHaveBeenCalledTimes(1);
@@ -545,7 +566,7 @@ describe('App', () => {
     try {
       render(<App />);
 
-      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Courses' }));
+      await user.click(viewNav().getByRole('button', { name: 'Courses' }));
       await user.click(screen.getByTestId('find-nearby-courses'));
 
       const importCards = await screen.findAllByTestId('import-course-card');
@@ -623,7 +644,7 @@ describe('App', () => {
     try {
       render(<App />);
 
-      await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Courses' }));
+      await user.click(viewNav().getByRole('button', { name: 'Courses' }));
       await user.click(screen.getByTestId('find-nearby-courses'));
 
       expect(await screen.findByRole('status')).toHaveTextContent('Showing Finnish courses');
@@ -646,7 +667,7 @@ describe('App', () => {
 
     render(<App />);
 
-    await user.click(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('button', { name: 'Courses' }));
+    await user.click(viewNav().getByRole('button', { name: 'Courses' }));
     await user.type(screen.getByTestId('course-name'), 'Local Park');
     fireEvent.change(screen.getByTestId('course-hole-count'), { target: { value: '2' } });
     fireEvent.change(screen.getByTestId('course-hole-1-par'), { target: { value: '3' } });
