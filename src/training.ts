@@ -86,8 +86,8 @@ export type TrainingSession = {
 };
 
 export type ProgressStats = {
-  lastScore: string | null;
-  bestScore: string | null;
+  lastMetric: string | null;
+  bestMetric: string | null;
   averageLastFour: string | null;
   averageLastFourLabel: string;
   commonError: string;
@@ -237,18 +237,6 @@ const cleanOptions: ScoreOption[] = [
 
 export const sections: SectionConfig[] = [
   {
-    id: 'approaches',
-    title: 'Putter approaches',
-    maxScore: 40,
-    accent: 'green',
-    drills: ['30 m', '40 m', '50 m', '60 m'].map((label) => ({
-      id: label,
-      label,
-      maxPerThrow: 2,
-      scoreOptions: approachOptions,
-    })),
-  },
-  {
     id: 'putting',
     title: 'Putting',
     maxScore: 25,
@@ -258,6 +246,18 @@ export const sections: SectionConfig[] = [
       label,
       maxPerThrow: 1,
       scoreOptions: madeOptions,
+    })),
+  },
+  {
+    id: 'approaches',
+    title: 'Putter approaches',
+    maxScore: 40,
+    accent: 'green',
+    drills: ['30 m', '40 m', '50 m', '60 m'].map((label) => ({
+      id: label,
+      label,
+      maxPerThrow: 2,
+      scoreOptions: approachOptions,
     })),
   },
   {
@@ -704,14 +704,14 @@ export function sessionMetricBadge(session: TrainingSession) {
   return session.trainingType === 'putting' ? accuracyLabel(session) : `Avg ${averageDistanceLabel(session)}`;
 }
 
-export function sessionScoreAriaLabel(session: TrainingSession) {
-  const scoreText = `Current score ${sessionScore(session)} out of ${sessionMaxScore(session)}`;
+export function sessionProgressAriaLabel(session: TrainingSession) {
+  const progressText = `Completed throws ${completedThrows(session)} of ${sessionThrowCount(session)}`;
   if (session.trainingType === 'putting') {
-    return `${scoreText}, accuracy ${accuracyLabel(session)}`;
+    return `${progressText}, accuracy ${accuracyLabel(session)}`;
   }
 
   const averageDistance = averageDistanceToBasket(session);
-  return `${scoreText}, average distance ${averageDistance === null ? 'no throws' : distanceLabel(averageDistance)}`;
+  return `${progressText}, average distance ${averageDistance === null ? 'no throws' : distanceLabel(averageDistance)}`;
 }
 
 export function sectionScore(session: TrainingSession, section: SectionConfig) {
@@ -1396,14 +1396,22 @@ export function calculateProgressStats(sessionsToRead: TrainingSession[]): Progr
         ? `${Math.round((lastFour.reduce((sum, session) => sum + sessionPercent(session), 0) / lastFour.length) * 100)}%`
         : null;
   const averageLastFourLabel = recentDistances.length > 0 ? 'Avg dist' : showingPuttingAverage ? 'Avg putting' : 'Avg dist';
+  const latestType = sessionsToRead[0]?.trainingType;
+  const comparableSessions = latestType
+    ? sessionsToRead.filter((session) => session.trainingType === latestType)
+    : [];
   const bestSession =
-    sessionsToRead.length > 0
-      ? [...sessionsToRead].sort((a, b) => sessionPercent(b) - sessionPercent(a))[0]
-      : null;
+    latestType === 'putting'
+      ? [...comparableSessions].sort((a, b) => sessionPercent(b) - sessionPercent(a))[0] ?? null
+      : [...comparableSessions].sort((a, b) => {
+          const distanceA = averageDistanceToBasket(a);
+          const distanceB = averageDistanceToBasket(b);
+          return (distanceA ?? Number.POSITIVE_INFINITY) - (distanceB ?? Number.POSITIVE_INFINITY);
+        })[0] ?? null;
 
   return {
-    lastScore: sessionsToRead[0] ? scoreLabel(sessionsToRead[0]) : null,
-    bestScore: bestSession ? scoreLabel(bestSession) : null,
+    lastMetric: sessionsToRead[0] ? sessionMetricValue(sessionsToRead[0]) : null,
+    bestMetric: bestSession ? sessionMetricValue(bestSession) : null,
     averageLastFour,
     averageLastFourLabel,
     commonError: mostCommonError(sessionsToRead),
@@ -1437,7 +1445,6 @@ function exportThrow(trainingType: TrainingType, result: ThrowResult, index: num
   return {
     throwNumber: index + 1,
     completed: true,
-    score: scoreForThrow(trainingType, result) ?? 0,
     ...(disc ? { disc } : {}),
     error: result.error || undefined,
     puttResult: trainingType === 'putting' ? result.puttResult || undefined : undefined,
@@ -1464,8 +1471,8 @@ export function createAiHistoryExport(
       sessionCount: sessionsToExport.length,
       completedThrowCount: sessionsToExport.reduce((sum, session) => sum + completedThrows(session), 0),
       sessionsByType: sessionsByType(sessionsToExport),
-      lastScore: stats.lastScore,
-      bestScore: stats.bestScore,
+      lastMetric: stats.lastMetric,
+      bestMetric: stats.bestMetric,
       recentAverageMetric: {
         label: stats.averageLastFourLabel,
         value: stats.averageLastFour,
@@ -1487,8 +1494,6 @@ export function createAiHistoryExport(
       plannedDistanceMeters: session.distanceMeters,
       plannedThrows: session.plannedThrows,
       completedThrows: completedThrows(session),
-      score: sessionScore(session),
-      maxScore: sessionMaxScore(session),
       metric: {
         label: sessionMetricName(session),
         value: sessionMetricValue(session),

@@ -92,14 +92,12 @@ import {
   scoreOptionsForType,
   sections,
   sessionConditionLabel,
-  sessionMaxScore,
   sessionMetricBadge,
   sessionMetricName,
   sessionMetricValue,
   sessionMostCommonParameter,
   sessionMostCommonParameterLabel,
-  sessionScoreAriaLabel,
-  sessionScore,
+  sessionProgressAriaLabel,
   sessionThrowCount,
   sessionTitle,
   throwAngles,
@@ -144,8 +142,8 @@ type SessionSetup = {
 
 function createSessionSetup(): SessionSetup {
   return {
-    trainingType: 'approaches',
-    distanceMeters: defaultDistanceForType('approaches'),
+    trainingType: 'putting',
+    distanceMeters: defaultDistanceForType('putting'),
     plannedThrows: '10',
     date: todayIsoDate(),
     wind: '',
@@ -398,7 +396,7 @@ function App() {
       return;
     }
 
-    if (completedThrows(draft) > 0 && !window.confirm('Clear the current session scores?')) {
+    if (completedThrows(draft) > 0 && !window.confirm('Clear the current session throws?')) {
       return;
     }
 
@@ -621,11 +619,11 @@ function App() {
         ) : draft ? (
           <div
             className="score-badge"
-            aria-label={sessionScoreAriaLabel(draft)}
-            data-testid="current-score"
+            aria-label={sessionProgressAriaLabel(draft)}
+            data-testid="current-progress"
           >
-            <strong>{sessionScore(draft)}</strong>
-            <span>/ {sessionMaxScore(draft)}</span>
+            <strong>{completedThrows(draft)}</strong>
+            <span>/ {sessionThrowCount(draft)}</span>
             <em>{sessionMetricBadge(draft)}</em>
           </div>
         ) : (
@@ -641,13 +639,13 @@ function App() {
           <StatCard
             icon={<Activity size={18} />}
             label="Last"
-            value={stats.lastScore === null ? '-' : stats.lastScore}
+            value={stats.lastMetric === null ? '-' : stats.lastMetric}
             testId="stat-last"
           />
           <StatCard
             icon={<Trophy size={18} />}
             label="Best"
-            value={stats.bestScore === null ? '-' : stats.bestScore}
+            value={stats.bestMetric === null ? '-' : stats.bestMetric}
             testId="stat-best"
           />
           <StatCard
@@ -797,17 +795,6 @@ function HomeView({ hasDraft, onNew, onContinue, onHistory, onDistance }: HomeVi
         <History size={20} />
         History
       </button>
-
-      <div className="training-type-grid">
-        {sections.map((section) => (
-          <div className={`type-summary ${section.accent}`} key={section.id}>
-            <strong>{section.title}</strong>
-            <span>
-              Custom distance - {section.id === 'approaches' ? 2 : 1} pts/throw
-            </span>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -828,7 +815,7 @@ function NewSessionView({ setup, onSetupChange, onTrainingTypeChange, onStart, o
           <h2>New session</h2>
         </div>
 
-        <div className="type-picker" aria-label="Training type">
+        <div className="type-picker" role="group" aria-label="Training type">
           {sections.map((section) => (
             <button
               key={section.id}
@@ -838,8 +825,8 @@ function NewSessionView({ setup, onSetupChange, onTrainingTypeChange, onStart, o
               data-testid={`type-${section.id}`}
             >
               <span>{section.title}</span>
-              <strong>{section.id === 'approaches' ? 2 : 1} pts</strong>
-              <small>Set your own distance and throw count</small>
+              <strong>{defaultDistanceForType(section.id)} m</strong>
+              <small>Set distance and throw count</small>
             </button>
           ))}
         </div>
@@ -986,7 +973,7 @@ function TrackView({
           <div className="complete-panel" data-testid="session-complete">
             <h2>Session complete</h2>
             <p>
-              {sessionScore(draft)}/{sessionMaxScore(draft)} - {sessionMetricBadge(draft)}
+              {sessionMetricName(draft)}: {sessionMetricValue(draft)}
             </p>
             {topParameter && <span>Top parameter: {sessionMostCommonParameterLabel(draft)}</span>}
           </div>
@@ -1254,9 +1241,8 @@ function HistoryView({ sessions, discs, onDelete }: HistoryViewProps) {
               </p>
             </div>
             <div className="history-score">
-              <strong>{sessionScore(session)}</strong>
-              <span>/ {sessionMaxScore(session)}</span>
-              <small>{sessionMetricBadge(session)}</small>
+              <strong>{sessionMetricValue(session)}</strong>
+              <small>{sessionMetricName(session)}</small>
             </div>
           </div>
 

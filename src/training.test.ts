@@ -148,8 +148,8 @@ describe('training model', () => {
 
     const stats = calculateProgressStats(sessions);
 
-    expect(stats.lastScore).toBe('8/10');
-    expect(stats.bestScore).toBe('8/10');
+    expect(stats.lastMetric).toBe('80%');
+    expect(stats.bestMetric).toBe('80%');
     expect(stats.averageLastFour).toBe('3.8 m');
     expect(stats.averageLastFourLabel).toBe('Avg dist');
     expect(stats.commonError).toBe('left (12)');
@@ -428,10 +428,12 @@ describe('training model', () => {
     expect(exported.summary).toMatchObject({
       sessionCount: 2,
       completedThrowCount: 2,
-      lastScore: '2/4',
-      bestScore: '1/1',
+      lastMetric: '2.5 m',
+      bestMetric: '2.5 m',
       mostCommonError: 'left (1)',
     });
+    expect(exported.summary).not.toHaveProperty('lastScore');
+    expect(exported.summary).not.toHaveProperty('bestScore');
     expect(exported.summary.sessionsByType).toMatchObject({ approaches: 1, putting: 1, midranges: 0, forehand: 0 });
     expect(exported.discs[0]).toMatchObject({ id: disc.id, name: 'Zone', category: 'putter' });
     expect(exported.sessions[0]).toMatchObject({
@@ -440,8 +442,6 @@ describe('training model', () => {
       plannedDistanceMeters: '40',
       plannedThrows: 2,
       completedThrows: 1,
-      score: 2,
-      maxScore: 4,
       metric: { label: 'Avg dist', value: '2.5 m' },
       topParameter: { label: 'Release wobble', category: 'Release', value: 'wobble', count: 1 },
       averageDistanceToBasketMeters: 2.5,
@@ -455,7 +455,6 @@ describe('training model', () => {
     expect(exported.sessions[0].throws[0]).toMatchObject({
       throwNumber: 1,
       completed: true,
-      score: 2,
       disc: { id: disc.id, name: 'Zone', category: 'putter' },
       error: 'left',
       distanceToBasketMeters: 2.5,
@@ -463,6 +462,9 @@ describe('training model', () => {
       releaseIssue: 'wobble',
     });
     expect(exported.sessions[0].throws[1]).toEqual({ throwNumber: 2, completed: false });
+    expect(exported.sessions[0]).not.toHaveProperty('score');
+    expect(exported.sessions[0]).not.toHaveProperty('maxScore');
+    expect(exported.sessions[0].throws[0]).not.toHaveProperty('score');
     expect(JSON.parse(createAiHistoryExportText([putting], [], '2026-06-28T12:00:00.000Z')).analysisPrompt).toContain(
       'Analyze this disc golf training history'
     );

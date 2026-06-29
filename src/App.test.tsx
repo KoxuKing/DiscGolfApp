@@ -60,8 +60,8 @@ describe('App', () => {
     expect(viewNav().queryByRole('button', { name: 'Distance' })).not.toBeInTheDocument();
     expect(screen.getByTestId('new-session')).toBeInTheDocument();
     expect(screen.getByTestId('max-distance')).toBeInTheDocument();
-    expect(screen.getByText('Putter approaches')).toBeInTheDocument();
-    expect(screen.getByText('Putting')).toBeInTheDocument();
+    expect(screen.queryByText('Putter approaches')).not.toBeInTheDocument();
+    expect(screen.queryByText('Putting')).not.toBeInTheDocument();
     expect(screen.queryByTestId('current-throw-card')).not.toBeInTheDocument();
   });
 
@@ -70,6 +70,9 @@ describe('App', () => {
     render(<App />);
 
     await user.click(screen.getByTestId('new-session'));
+    expect(within(screen.getByRole('group', { name: 'Training type' })).getAllByRole('button')[0]).toHaveTextContent(
+      'Putting'
+    );
     await user.click(screen.getByTestId('type-putting'));
     await user.clear(screen.getByTestId('setup-distance'));
     await user.type(screen.getByTestId('setup-distance'), '8');
@@ -84,7 +87,7 @@ describe('App', () => {
     await user.click(screen.getByTestId('start-session'));
 
     expect(screen.getByRole('heading', { level: 1, name: 'Putting' })).toBeInTheDocument();
-    expect(screen.getByTestId('current-score')).toHaveAccessibleName('Current score 0 out of 3, accuracy 0%');
+    expect(screen.getByTestId('current-progress')).toHaveAccessibleName('Completed throws 0 of 3, accuracy 0%');
     expect(screen.getByText('1 / 3')).toBeInTheDocument();
     expect(screen.getByText('8 m - 3 throws - Headwind - Medium wind - Fatigue 5')).toBeInTheDocument();
     expect(screen.getAllByTestId('current-throw-card')).toHaveLength(1);
@@ -99,7 +102,7 @@ describe('App', () => {
     await user.selectOptions(screen.getByTestId('current-error'), 'left');
     await user.click(screen.getByTestId('apply-throw'));
 
-    expect(screen.getByTestId('current-score')).toHaveAccessibleName('Current score 1 out of 3, accuracy 33%');
+    expect(screen.getByTestId('current-progress')).toHaveAccessibleName('Completed throws 1 of 3, accuracy 33%');
     expect(screen.getByText('2 / 3')).toBeInTheDocument();
 
     await user.click(screen.getByTestId('save-session'));
@@ -108,8 +111,8 @@ describe('App', () => {
     expect(within(card).getByRole('heading', { name: 'Putting' })).toBeInTheDocument();
     expect(card).toHaveTextContent('2026-06-28 - 8 m - 1 throw - Headwind - Medium wind - Fatigue 5 - 1/1 throws');
     expect(card).toHaveTextContent('Work on nose angle.');
-    expect(screen.getByTestId('stat-last')).toHaveTextContent('1/1');
-    expect(screen.getByTestId('stat-best')).toHaveTextContent('1/1');
+    expect(screen.getByTestId('stat-last')).toHaveTextContent('100%');
+    expect(screen.getByTestId('stat-best')).toHaveTextContent('100%');
     expect(screen.getByTestId('stat-average')).toHaveTextContent('100%');
     expect(screen.getByTestId('stat-error')).toHaveTextContent('left (1)');
 
@@ -165,6 +168,7 @@ describe('App', () => {
     expect(savedDiscs).toHaveLength(1);
 
     await openNewSession(user);
+    await user.click(screen.getByTestId('type-approaches'));
     fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '2' } });
     await user.click(screen.getByTestId('start-session'));
 
@@ -373,7 +377,7 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(screen.getByTestId('stat-last')).toHaveTextContent('1/4');
+    expect(screen.getByTestId('stat-last')).toHaveTextContent('5 m');
     expect(screen.getByTestId('stat-average')).toHaveTextContent('Avg dist');
     expect(screen.getByTestId('stat-average')).toHaveTextContent('5 m');
 
@@ -383,7 +387,8 @@ describe('App', () => {
     const card = screen.getByTestId('history-card');
     expect(card).toHaveTextContent('Forehand');
     expect(card).toHaveTextContent('2026-06-10 - 55 m - 4 throws - Tailwind - Gusty wind - Fatigue 4 - 1/4 throws');
-    expect(card).toHaveTextContent('Avg 5 m');
+    expect(card).toHaveTextContent('5 m');
+    expect(card).toHaveTextContent('Avg dist');
     expect(card).toHaveTextContent('Top parameter: Release griplock (1)');
 
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -424,6 +429,7 @@ describe('App', () => {
       expect(writeText.mock.calls[0][0]).toContain('"trainingType": "forehand"');
       expect(writeText.mock.calls[0][0]).toContain('"topParameter"');
       expect(writeText.mock.calls[0][0]).toContain('"releaseIssue": "griplock"');
+      expect(writeText.mock.calls[0][0]).not.toContain('"maxScore"');
       expect(await screen.findByRole('status')).toHaveTextContent('Copied for AI');
 
       await user.click(screen.getByTestId('download-ai-export'));
@@ -449,6 +455,7 @@ describe('App', () => {
     render(<App />);
 
     await user.click(screen.getByTestId('new-session'));
+    await user.click(screen.getByTestId('type-approaches'));
     fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '2' } });
     await user.click(screen.getByTestId('start-session'));
 
@@ -465,7 +472,9 @@ describe('App', () => {
     await user.selectOptions(screen.getByTestId('current-release'), 'griplock');
     await user.click(screen.getByTestId('apply-throw'));
 
-    expect(screen.getByTestId('current-score')).toHaveAccessibleName('Current score 2 out of 4, average distance 2.7 m');
+    expect(screen.getByTestId('current-progress')).toHaveAccessibleName(
+      'Completed throws 1 of 2, average distance 2.7 m'
+    );
     expect(screen.getByText('2 / 2')).toBeInTheDocument();
 
     const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}') as TrainingSession;
@@ -479,7 +488,9 @@ describe('App', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(screen.getByRole('button', { name: 'Reset' }));
 
-    expect(screen.getByTestId('current-score')).toHaveAccessibleName('Current score 0 out of 4, average distance no throws');
+    expect(screen.getByTestId('current-progress')).toHaveAccessibleName(
+      'Completed throws 0 of 2, average distance no throws'
+    );
     expect(screen.getByText('1 / 2')).toBeInTheDocument();
   });
 
@@ -500,7 +511,10 @@ describe('App', () => {
     await user.selectOptions(screen.getByTestId('current-release'), 'griplock');
     await user.click(screen.getByTestId('apply-throw'));
 
-    expect(screen.getByTestId('current-score')).toHaveAccessibleName('Current score 1 out of 1, average distance 5 m');
+    expect(screen.getByTestId('current-progress')).toHaveAccessibleName(
+      'Completed throws 1 of 1, average distance 5 m'
+    );
+    expect(screen.getByTestId('session-complete')).toHaveTextContent('Avg dist: 5 m');
     expect(screen.getByTestId('session-complete')).toHaveTextContent('Top parameter: Release griplock (1)');
 
     const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}') as TrainingSession;
