@@ -73,7 +73,9 @@ describe('App', () => {
     await user.click(screen.getByTestId('type-putting'));
     await user.clear(screen.getByTestId('setup-distance'));
     await user.type(screen.getByTestId('setup-distance'), '8');
-    fireEvent.change(screen.getByTestId('setup-throws'), { target: { value: '3' } });
+    await user.clear(screen.getByTestId('setup-throws'));
+    expect(screen.getByTestId('setup-throws')).toHaveDisplayValue('');
+    await user.type(screen.getByTestId('setup-throws'), '3');
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-06-28' } });
     await user.selectOptions(screen.getByLabelText('Wind direction'), 'Headwind');
     await user.selectOptions(screen.getByLabelText('Wind'), 'Medium');
@@ -684,11 +686,19 @@ describe('App', () => {
 
     await user.click(viewNav().getByRole('button', { name: 'Courses' }));
     await user.type(screen.getByTestId('course-name'), 'Local Park');
-    fireEvent.change(screen.getByTestId('course-hole-count'), { target: { value: '2' } });
-    fireEvent.change(screen.getByTestId('course-hole-1-par'), { target: { value: '3' } });
-    fireEvent.change(screen.getByTestId('course-hole-1-distance'), { target: { value: '85' } });
-    fireEvent.change(screen.getByTestId('course-hole-2-par'), { target: { value: '4' } });
-    fireEvent.change(screen.getByTestId('course-hole-2-distance'), { target: { value: '126' } });
+    await user.clear(screen.getByTestId('course-hole-count'));
+    expect(screen.getByTestId('course-hole-count')).toHaveDisplayValue('');
+    await user.type(screen.getByTestId('course-hole-count'), '2');
+    await user.clear(screen.getByTestId('course-hole-1-par'));
+    expect(screen.getByTestId('course-hole-1-par')).toHaveDisplayValue('');
+    await user.type(screen.getByTestId('course-hole-1-par'), '3');
+    await user.clear(screen.getByTestId('course-hole-1-distance'));
+    expect(screen.getByTestId('course-hole-1-distance')).toHaveDisplayValue('');
+    await user.type(screen.getByTestId('course-hole-1-distance'), '85');
+    await user.clear(screen.getByTestId('course-hole-2-par'));
+    await user.type(screen.getByTestId('course-hole-2-par'), '4');
+    await user.clear(screen.getByTestId('course-hole-2-distance'));
+    await user.type(screen.getByTestId('course-hole-2-distance'), '126');
     await user.click(screen.getByTestId('add-course'));
 
     expect(JSON.parse(localStorage.getItem(COURSES_KEY) ?? '[]')).toHaveLength(1);

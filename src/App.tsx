@@ -133,7 +133,7 @@ function isTrainingView(view: View) {
 type SessionSetup = {
   trainingType: SectionId;
   distanceMeters: string;
-  plannedThrows: number;
+  plannedThrows: string;
   date: string;
   wind: string;
   windDirection: string;
@@ -145,7 +145,7 @@ function createSessionSetup(): SessionSetup {
   return {
     trainingType: 'approaches',
     distanceMeters: defaultDistanceForType('approaches'),
-    plannedThrows: 10,
+    plannedThrows: '10',
     date: todayIsoDate(),
     wind: '',
     windDirection: '',
@@ -234,6 +234,22 @@ function getCurrentGpsPoint() {
 
 function gpsAccuracyText(point: GpsPoint | null) {
   return point?.accuracyMeters !== undefined ? `${Math.round(point.accuracyMeters)} m` : '-';
+}
+
+function parsedEditableNumber(value: string) {
+  return value.trim() === '' ? Number.NaN : Number(value);
+}
+
+function editableNumberValue(value: number) {
+  return Number.isFinite(value) ? String(value) : '';
+}
+
+function editableClampedNumber(value: string, clamp: (numberValue: number) => number) {
+  return value.trim() === '' ? Number.NaN : clamp(Number(value));
+}
+
+function plannedThrowsFromSetup(setup: SessionSetup) {
+  return clampPlannedThrows(parsedEditableNumber(setup.plannedThrows));
 }
 
 function discSelectLabel(disc: Disc) {
@@ -363,7 +379,7 @@ function App() {
     const nextDraft: TrainingSession = {
       ...createBlankSession(setup.trainingType, {
         distanceMeters: setup.distanceMeters,
-        plannedThrows: setup.plannedThrows,
+        plannedThrows: plannedThrowsFromSetup(setup),
       }),
       date: setup.date,
       wind: setup.wind,
@@ -846,7 +862,7 @@ function NewSessionView({ setup, onSetupChange, onTrainingTypeChange, onStart, o
               min="1"
               max="200"
               value={setup.plannedThrows}
-              onChange={(event) => onSetupChange('plannedThrows', clampPlannedThrows(Number(event.target.value)))}
+              onChange={(event) => onSetupChange('plannedThrows', event.target.value)}
               data-testid="setup-throws"
             />
           </label>
@@ -1285,7 +1301,7 @@ type CourseStartSetup = {
 
 function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDeleteRun }: CoursesViewProps) {
   const [name, setName] = useState('');
-  const [holeCount, setHoleCount] = useState(18);
+  const [holeCountInput, setHoleCountInput] = useState('18');
   const [holes, setHoles] = useState<CourseHole[]>(() => createCourseHoles(18));
   const [importMetadata, setImportMetadata] = useState<Partial<Course> | null>(null);
   const [importedCourses, setImportedCourses] = useState<ImportedCourse[]>([]);
@@ -1299,12 +1315,20 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
     const nextCount = clampHoleCount(value);
     const generatedHoles = createCourseHoles(nextCount);
 
-    setHoleCount(nextCount);
+    setHoleCountInput(String(nextCount));
     setHoles((current) =>
       generatedHoles.map((generatedHole, index) =>
         current[index] ? { ...current[index], number: index + 1 } : generatedHole
       )
     );
+  }
+
+  function updateHoleCountInput(value: string) {
+    setHoleCountInput(value);
+
+    if (value.trim() !== '') {
+      updateHoleCount(parsedEditableNumber(value));
+    }
   }
 
   function updateHole(index: number, patch: Partial<CourseHole>) {
@@ -1320,9 +1344,16 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
       return;
     }
 
-    onAdd(name, holes, importMetadata ?? undefined);
+    const normalizedHoles = holes.map((hole, index) => ({
+      ...hole,
+      number: index + 1,
+      par: clampCoursePar(hole.par),
+      distanceMeters: clampCourseDistance(hole.distanceMeters),
+    }));
+
+    onAdd(name, normalizedHoles, importMetadata ?? undefined);
     setName('');
-    setHoleCount(18);
+    setHoleCountInput('18');
     setHoles(createCourseHoles(18));
     setImportMetadata(null);
   }
@@ -1357,7 +1388,7 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
     const draft = createCourseDraftFromImport(importedCourse);
 
     setName(draft.name);
-    setHoleCount(draft.holes.length);
+    setHoleCountInput(String(draft.holes.length));
     setHoles(draft.holes);
     setImportMetadata(draft.metadata);
     setCourseImportStatus(`${importedCourse.name} loaded as editable draft.`);
@@ -1525,8 +1556,8 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
             type="number"
             min="1"
             max="36"
-            value={holeCount}
-            onChange={(event) => updateHoleCount(Number(event.target.value))}
+            value={holeCountInput}
+            onChange={(event) => updateHoleCountInput(event.target.value)}
             data-testid="course-hole-count"
           />
         </label>
@@ -1542,8 +1573,8 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
                   type="number"
                   min="1"
                   max="10"
-                  value={hole.par}
-                  onChange={(event) => updateHole(index, { par: clampCoursePar(Number(event.target.value)) })}
+                  value={editableNumberValue(hole.par)}
+                  onChange={(event) => updateHole(index, { par: editableClampedNumber(event.target.value, clampCoursePar) })}
                   data-testid={`course-hole-${hole.number}-par`}
                 />
               </label>
@@ -1554,9 +1585,9 @@ function CoursesView({ courses, courseRuns, onAdd, onDelete, onStartRun, onDelet
                   type="number"
                   min="1"
                   max="500"
-                  value={hole.distanceMeters}
+                  value={editableNumberValue(hole.distanceMeters)}
                   onChange={(event) =>
-                    updateHole(index, { distanceMeters: clampCourseDistance(Number(event.target.value)) })
+                    updateHole(index, { distanceMeters: editableClampedNumber(event.target.value, clampCourseDistance) })
                   }
                   data-testid={`course-hole-${hole.number}-distance`}
                 />
