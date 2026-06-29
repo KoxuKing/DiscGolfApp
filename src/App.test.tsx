@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -293,24 +293,36 @@ describe('App', () => {
         timestamp: Date.parse('2026-06-28T12:01:00.000Z'),
       },
     ] as GeolocationPosition[];
-    let positionIndex = 0;
+    let watchSuccess: PositionCallback | undefined;
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
-      success(positions[Math.min(positionIndex, positions.length - 1)]);
-      positionIndex += 1;
+      success(positions[0]);
+    });
+    const watchPosition = vi.fn((success: PositionCallback) => {
+      watchSuccess = success;
+      success(positions[0]);
+      return 42;
+    });
+    const clearWatch = vi.fn();
+
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition, watchPosition, clearWatch },
     });
 
-    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition } });
-
     try {
-      render(<App />);
+      const { unmount } = render(<App />);
 
       await openTraining(user);
       await user.click(screen.getByTestId('max-distance'));
+
+      expect(await screen.findByTestId('live-gps-accuracy')).toHaveTextContent('4 m');
       await user.click(screen.getByTestId('gps-start'));
 
       expect(await screen.findByRole('status')).toHaveTextContent('Start saved');
       expect(screen.getByText('Accuracy 4 m')).toBeInTheDocument();
 
+      watchSuccess?.(positions[1]);
+      await waitFor(() => expect(screen.getByTestId('live-gps-accuracy')).toHaveTextContent('5 m'));
       await user.click(screen.getByTestId('gps-end'));
 
       expect(await screen.findByRole('status')).toHaveTextContent('End saved');
@@ -335,6 +347,9 @@ describe('App', () => {
       expect(screen.getByTestId('distance-card')).toHaveTextContent('111 m');
       expect(screen.getByTestId('distance-card')).toHaveTextContent('forehand');
       expect(screen.getByTestId('distance-card')).toHaveTextContent('hyzer');
+      expect(getCurrentPosition).not.toHaveBeenCalled();
+      unmount();
+      expect(clearWatch).toHaveBeenCalledWith(42);
     } finally {
       if (originalGeolocation) {
         Object.defineProperty(navigator, 'geolocation', originalGeolocation);

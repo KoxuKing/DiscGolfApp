@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   Activity,
   ChevronLeft,
@@ -208,6 +208,15 @@ function getCurrentCoordinates() {
   });
 }
 
+function gpsPointFromPosition(position: GeolocationPosition): GpsPoint {
+  return {
+    lat: position.coords.latitude,
+    lon: position.coords.longitude,
+    accuracyMeters: position.coords.accuracy,
+    recordedAt: new Date(position.timestamp).toISOString(),
+  };
+}
+
 function getCurrentGpsPoint() {
   return new Promise<GpsPoint>((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -216,17 +225,15 @@ function getCurrentGpsPoint() {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) =>
-        resolve({
-          lat: position.coords.latitude,
-          lon: position.coords.longitude,
-          accuracyMeters: position.coords.accuracy,
-          recordedAt: new Date(position.timestamp).toISOString(),
-        }),
+      (position) => resolve(gpsPointFromPosition(position)),
       (error) => reject(error),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   });
+}
+
+function gpsAccuracyText(point: GpsPoint | null) {
+  return point?.accuracyMeters !== undefined ? `${Math.round(point.accuracyMeters)} m` : '-';
 }
 
 function discSelectLabel(disc: Disc) {
@@ -1956,6 +1963,8 @@ type DistanceMeasureViewProps = {
 };
 
 function DistanceMeasureView({ discs, distanceThrows, onSave, onDelete }: DistanceMeasureViewProps) {
+  const [livePoint, setLivePoint] = useState<GpsPoint | null>(null);
+  const [liveError, setLiveError] = useState('');
   const [startPoint, setStartPoint] = useState<GpsPoint | null>(null);
   const [endPoint, setEndPoint] = useState<GpsPoint | null>(null);
   const [status, setStatus] = useState('');
@@ -1971,16 +1980,67 @@ function DistanceMeasureView({ discs, distanceThrows, onSave, onDelete }: Distan
   const bestThrow = bestDistanceThrow(distanceThrows);
   const averageRecent = averageDistanceThrows(distanceThrows);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!navigator.geolocation) {
+      setLiveError('Live GPS unavailable on this device.');
+      return undefined;
+    }
+
+    setLiveError('');
+
+    if (!navigator.geolocation.watchPosition) {
+      getCurrentGpsPoint()
+        .then((point) => {
+          if (!cancelled) {
+            setLivePoint(point);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setLiveError('Live GPS unavailable. Allow location permission and go outdoors.');
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (cancelled) {
+          return;
+        }
+
+        setLivePoint(gpsPointFromPosition(position));
+        setLiveError('');
+      },
+      () => {
+        if (!cancelled) {
+          setLiveError('Live GPS unavailable. Allow location permission and go outdoors.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+
+    return () => {
+      cancelled = true;
+      navigator.geolocation.clearWatch?.(watchId);
+    };
+  }, []);
+
   async function captureStart() {
     setLoading(true);
     setError('');
-    setStatus('Getting tee position...');
+    setStatus(livePoint ? 'Saving tee position...' : 'Getting tee position...');
 
     try {
-      const point = await getCurrentGpsPoint();
+      const point = livePoint ?? (await getCurrentGpsPoint());
       setStartPoint(point);
       setEndPoint(null);
-      setStatus('Start saved. Walk to your disc and press End.');
+      setStatus('Start saved. Walk to your disc, wait for good GPS accuracy, and press End.');
     } catch {
       setError('Could not get GPS location. Allow location permission and try outdoors.');
       setStatus('');
@@ -1997,10 +2057,10 @@ function DistanceMeasureView({ discs, distanceThrows, onSave, onDelete }: Distan
 
     setLoading(true);
     setError('');
-    setStatus('Getting disc position...');
+    setStatus(livePoint ? 'Saving disc position...' : 'Getting disc position...');
 
     try {
-      const point = await getCurrentGpsPoint();
+      const point = livePoint ?? (await getCurrentGpsPoint());
       setEndPoint(point);
       setStatus('End saved. Review and save the throw.');
     } catch {
@@ -2045,6 +2105,15 @@ function DistanceMeasureView({ discs, distanceThrows, onSave, onDelete }: Distan
 
         <article className="current-throw-card distance-measure-card">
           <h2>Measure throw</h2>
+          <div className="gps-live" data-testid="live-gps">
+            <div>
+              <span>Live GPS accuracy</span>
+              <strong data-testid="live-gps-accuracy">{gpsAccuracyText(livePoint)}</strong>
+              <small>{livePoint ? 'Updates automatically while this screen is open' : 'Waiting for GPS signal'}</small>
+            </div>
+            <MapPin size={20} />
+          </div>
+          {liveError && <p className="import-error">{liveError}</p>}
           <div className="distance-actions">
             <button className="primary-action" type="button" onClick={captureStart} disabled={loading} data-testid="gps-start">
               <MapPin size={18} />
@@ -2208,7 +2277,7 @@ function GpsPointSummary({ label, point }: GpsPointSummaryProps) {
     <div className="gps-point">
       <span>{label}</span>
       <strong>{point ? 'Saved' : '-'}</strong>
-      <small>{point?.accuracyMeters !== undefined ? `Accuracy ${Math.round(point.accuracyMeters)} m` : 'GPS accuracy'}</small>
+      <small>{point?.accuracyMeters !== undefined ? `Accuracy ${gpsAccuracyText(point)}` : 'GPS accuracy'}</small>
     </div>
   );
 }
