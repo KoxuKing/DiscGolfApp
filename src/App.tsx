@@ -72,6 +72,7 @@ import {
   discCategories,
   errorTypes,
   finalizeSessionForSave,
+  gpsDistanceMeters,
   isSessionComplete,
   makeId,
   puttResultsForScore,
@@ -1994,7 +1995,8 @@ function DistanceMeasureView({ discs, distanceThrows, onSave, onDelete }: Distan
   const [wind, setWind] = useState('');
   const [windDirection, setWindDirection] = useState('');
   const [notes, setNotes] = useState('');
-  const measuredDistance = startPoint && endPoint ? createDistanceThrow(startPoint, endPoint).distanceMeters : null;
+  const distancePoint = endPoint ?? (startPoint ? livePoint : null);
+  const measuredDistance = startPoint && distancePoint ? gpsDistanceMeters(startPoint, distancePoint) : null;
   const bestThrow = bestDistanceThrow(distanceThrows);
   const averageRecent = averageDistanceThrows(distanceThrows);
 

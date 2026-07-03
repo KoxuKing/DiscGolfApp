@@ -328,9 +328,11 @@ describe('App', () => {
 
       expect(await screen.findByRole('status')).toHaveTextContent('Start saved');
       expect(screen.getByText('Accuracy 4 m')).toBeInTheDocument();
+      expect(screen.getByTestId('measured-distance')).toHaveTextContent('0 m');
 
       watchSuccess?.(positions[1]);
       await waitFor(() => expect(screen.getByTestId('live-gps-accuracy')).toHaveTextContent('5 m'));
+      expect(screen.getByTestId('measured-distance')).toHaveTextContent('111 m');
       await user.click(screen.getByTestId('gps-end'));
 
       expect(await screen.findByRole('status')).toHaveTextContent('End saved');
